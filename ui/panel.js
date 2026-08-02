@@ -23,7 +23,9 @@ function buildRow(session) {
   li.className = `row${session.focused ? " is-focused" : ""}`;
 
   const dot = document.createElement("span");
-  dot.className = `dot ${session.status === "busy" ? "busy" : "idle"}`;
+  const status = session.status || "idle";
+  dot.className = `dot ${["busy", "waiting"].includes(status) ? status : "idle"}`;
+  dot.title = status;
   li.appendChild(dot);
 
   const text = document.createElement("div");

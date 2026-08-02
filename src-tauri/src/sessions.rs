@@ -135,6 +135,8 @@ pub fn scan(env_cache: &mut HashMap<i32, ProcEnv>) -> Vec<Session> {
     };
 
     let mut sessions = Vec::new();
+    // Directory enclosing each session's repo, kept to disambiguate collisions.
+    let mut enclosing = Vec::new();
     for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|e| e.to_str()) != Some("json") {
@@ -182,6 +184,13 @@ pub fn scan(env_cache: &mut HashMap<i32, ProcEnv>) -> Vec<Session> {
 
         let env = env_cache.entry(pid).or_insert_with(|| proc_env(pid)).clone();
 
+        enclosing.push(
+            root.as_deref()
+                .and_then(Path::parent)
+                .map(basename)
+                .unwrap_or_default(),
+        );
+
         sessions.push(Session {
             pid,
             session_id: value
@@ -209,6 +218,18 @@ pub fn scan(env_cache: &mut HashMap<i32, ProcEnv>) -> Vec<Session> {
 
     // Drop cache entries for sessions that have exited.
     env_cache.retain(|pid, _| table.contains_key(pid));
+
+    // A bare repo name is useless when two checkouts share it — `web-client`
+    // says nothing when you have three. Qualify only the ones that collide.
+    let mut counts: HashMap<String, usize> = HashMap::new();
+    for session in &sessions {
+        *counts.entry(session.repo.clone()).or_default() += 1;
+    }
+    for (session, parent) in sessions.iter_mut().zip(&enclosing) {
+        if counts.get(&session.repo).copied().unwrap_or(0) > 1 && !parent.is_empty() {
+            session.repo = format!("{parent}/{}", session.repo);
+        }
+    }
 
     sessions.sort_by_key(|s| (s.started_at.unwrap_or(0), s.pid));
     sessions

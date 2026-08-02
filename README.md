@@ -18,7 +18,8 @@ named after its repository and renameable to whatever you like.
   screen and the tag updates.
 - **Names itself from the repo**, and remembers renames per session *and* per
   directory, so tomorrow's session in the same checkout keeps the name.
-- **Live status.** The dot pulses while Claude is working and rests when idle.
+- **Live status.** The dot rests cyan when idle, pulses pink while Claude works,
+  and turns amber when a session is blocked waiting on you.
 
 ---
 
@@ -86,6 +87,13 @@ Space, which is exactly right here: whatever it can see is what you're looking
 at. The floater is marked `visibleOnAllWorkspaces`, so a single window follows
 you across every Desktop instead of one per Space.
 
+gru asks each *terminal app hosting a session* whether it is `AXFrontmost`,
+rather than asking the system for its focused application. The system-wide
+`AXFocusedApplication` query returns `kAXErrorCannotComplete` (-25204) on macOS
+26 even with Accessibility fully granted, while per-application queries work
+reliably. Scoping the question to terminals is also the behaviour we want: when
+you're in a browser, no candidate matches and the floater hides itself.
+
 ### Why `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
 
 Claude Code rewrites the terminal title as it works — `✳ Claude Code` at rest,
@@ -126,6 +134,9 @@ Window ids are read from whichever of `ALACRITTY_WINDOW_ID`, `KITTY_WINDOW_ID`,
 ```bash
 npm run dev                          # hot-reloading dev build
 cargo test --manifest-path src-tauri/Cargo.toml
+
+# Print exactly what gru sees — sessions, terminal apps, focus resolution.
+cargo run --manifest-path src-tauri/Cargo.toml --bin gru-doctor
 ```
 
 | Path | Purpose |
@@ -144,8 +155,11 @@ a separate Accessibility entry — you'll be asked to grant access twice.
 
 ## Troubleshooting
 
+Run `gru-doctor` first — it answers most of these directly.
+
 **The floater never appears.** Check Accessibility access is granted to the
 binary you're actually running. Tray › *Sessions…* shows a banner when it isn't.
+`gru-doctor` prints `accessibility : granted` when it's in order.
 
 **It shows the wrong session, or lags a moment behind.** Almost always the title
 tug-of-war — run `./scripts/setup-shell.sh` and restart those sessions.

@@ -10,9 +10,11 @@
 
 use accessibility_sys::{
     kAXErrorSuccess, kAXFocusedApplicationAttribute, kAXFocusedWindowAttribute,
-    kAXPositionAttribute, kAXSizeAttribute, kAXTitleAttribute, kAXTrustedCheckOptionPrompt,
+    kAXFrontmostAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXTitleAttribute,
+    kAXTrustedCheckOptionPrompt,
     kAXValueTypeCGPoint, kAXValueTypeCGSize, AXIsProcessTrusted, AXIsProcessTrustedWithOptions,
-    AXUIElementCopyAttributeValue, AXUIElementCreateSystemWide, AXUIElementGetPid, AXUIElementRef,
+    AXUIElementCopyAttributeValue, AXUIElementCreateApplication, AXUIElementCreateSystemWide,
+    AXUIElementGetPid, AXUIElementRef,
     AXUIElementSetMessagingTimeout, AXValueGetValue, AXValueRef,
 };
 use core_foundation::base::{CFGetTypeID, CFRelease, CFTypeRef, TCFType};
@@ -118,43 +120,125 @@ unsafe fn attr_size(element: AXUIElementRef, attribute: &str) -> Option<CgSize> 
     ok.then_some(out)
 }
 
-/// Reads the currently focused window across the whole system.
+/// Explains, step by step, why `focused_window` returned what it did.
 ///
-/// Returns `None` when AX permission is missing, nothing is focused, or the
-/// focused app exposes no focused window (common for menu-bar-only agents).
-pub fn focused_window() -> Option<FocusedWindow> {
+/// AX failures are otherwise indistinguishable from "nothing is focused", which
+/// makes a missing floater impossible to diagnose from the outside.
+pub fn focus_diagnostic() -> String {
     unsafe {
         let system = AXUIElementCreateSystemWide();
         if system.is_null() {
-            return None;
+            return "system-wide AX element is null".into();
         }
         let system = CfOwned(system as CFTypeRef);
-
-        // Never let a wedged app stall the tracker loop.
         AXUIElementSetMessagingTimeout(system.0 as AXUIElementRef, 0.25);
 
-        let app = copy_attr(system.0 as AXUIElementRef, kAXFocusedApplicationAttribute)?;
-        let app_ref = app.0 as AXUIElementRef;
+        let attr = CFString::new(kAXFocusedApplicationAttribute);
+        let mut value: CFTypeRef = std::ptr::null();
+        let err = AXUIElementCopyAttributeValue(
+            system.0 as AXUIElementRef,
+            attr.as_concrete_TypeRef(),
+            &mut value,
+        );
+        if err != kAXErrorSuccess || value.is_null() {
+            return format!("AXFocusedApplication failed (AXError {err})");
+        }
+        let app = CfOwned(value);
 
         let mut pid: libc::pid_t = 0;
-        if AXUIElementGetPid(app_ref, &mut pid) != kAXErrorSuccess {
-            return None;
+        AXUIElementGetPid(app.0 as AXUIElementRef, &mut pid);
+
+        let attr = CFString::new(kAXFocusedWindowAttribute);
+        let mut window: CFTypeRef = std::ptr::null();
+        let err = AXUIElementCopyAttributeValue(
+            app.0 as AXUIElementRef,
+            attr.as_concrete_TypeRef(),
+            &mut window,
+        );
+        if err != kAXErrorSuccess || window.is_null() {
+            return format!("app pid {pid} has no AXFocusedWindow (AXError {err})");
         }
-
-        let window = copy_attr(app_ref, kAXFocusedWindowAttribute)?;
-        let window_ref = window.0 as AXUIElementRef;
-
-        let title = attr_string(window_ref, kAXTitleAttribute).unwrap_or_default();
-        let pos = attr_point(window_ref, kAXPositionAttribute).unwrap_or_default();
-        let size = attr_size(window_ref, kAXSizeAttribute).unwrap_or_default();
-
-        Some(FocusedWindow {
-            pid: pid as i32,
-            title,
-            x: pos.x,
-            y: pos.y,
-            w: size.width,
-            h: size.height,
-        })
+        CFRelease(window);
+        format!("app pid {pid} reports a focused window")
     }
+}
+
+/// Probes a specific application's focused window. Used by `gru-doctor` to tell
+/// a permissions problem apart from a system-wide-query problem.
+pub fn probe_app(pid: i32) -> Result<String, String> {
+    unsafe {
+        let app = AXUIElementCreateApplication(pid as libc::pid_t);
+        if app.is_null() {
+            return Err("AXUIElementCreateApplication returned null".into());
+        }
+        let app = CfOwned(app as CFTypeRef);
+
+        let attr = CFString::new(kAXFocusedWindowAttribute);
+        let mut window: CFTypeRef = std::ptr::null();
+        let err = AXUIElementCopyAttributeValue(
+            app.0 as AXUIElementRef,
+            attr.as_concrete_TypeRef(),
+            &mut window,
+        );
+        if err != kAXErrorSuccess || window.is_null() {
+            return Err(format!("AXFocusedWindow -> AXError {err}"));
+        }
+        let window = CfOwned(window);
+        attr_string(window.0 as AXUIElementRef, kAXTitleAttribute)
+            .ok_or_else(|| "window has no AXTitle".into())
+    }
+}
+
+unsafe fn attr_bool(element: AXUIElementRef, attribute: &str) -> Option<bool> {
+    let owned = copy_attr(element, attribute)?;
+    // kCFBooleanTrue is a singleton, so identity is a valid test.
+    Some(owned.0 == CFBoolean::true_value().as_CFTypeRef())
+}
+
+/// Reads the focused window of whichever of `app_pids` is currently frontmost.
+///
+/// Deliberately *not* the system-wide `AXFocusedApplication` attribute: that
+/// query returns kAXErrorCannotComplete (-25204) on this setup even with
+/// Accessibility fully granted, while per-application queries work fine.
+/// Scoping to known terminal apps is also exactly the semantics gru wants —
+/// when the user is in a browser, nothing matches and the floater hides.
+///
+/// Returns `None` when no listed app is frontmost or AX permission is missing.
+pub fn focused_window_among(app_pids: &[i32]) -> Option<FocusedWindow> {
+    for &pid in app_pids {
+        unsafe {
+            let app = AXUIElementCreateApplication(pid as libc::pid_t);
+            if app.is_null() {
+                continue;
+            }
+            let app = CfOwned(app as CFTypeRef);
+            let app_ref = app.0 as AXUIElementRef;
+
+            // Never let a wedged app stall the tracker loop.
+            AXUIElementSetMessagingTimeout(app_ref, 0.25);
+
+            if attr_bool(app_ref, kAXFrontmostAttribute) != Some(true) {
+                continue;
+            }
+
+            let Some(window) = copy_attr(app_ref, kAXFocusedWindowAttribute) else {
+                continue;
+            };
+            let window_ref = window.0 as AXUIElementRef;
+
+            let title = attr_string(window_ref, kAXTitleAttribute).unwrap_or_default();
+            let pos = attr_point(window_ref, kAXPositionAttribute).unwrap_or_default();
+            let size = attr_size(window_ref, kAXSizeAttribute).unwrap_or_default();
+
+            return Some(FocusedWindow {
+                pid,
+                title,
+                x: pos.x,
+                y: pos.y,
+                w: size.width,
+                h: size.height,
+            });
+        }
+    }
+    None
 }

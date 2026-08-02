@@ -10,6 +10,16 @@ const anchor = document.getElementById("anchor");
 let current = null;
 let editing = false;
 
+const STATUS = {
+  busy: ["busy", "working"],
+  waiting: ["waiting", "waiting for you"],
+};
+
+/** Maps Claude Code's status string to a dot class and a tooltip. */
+function statusOf(status) {
+  return STATUS[status] || ["idle", "idle"];
+}
+
 /** Secondary line: whatever the name itself doesn't already tell you. */
 function describe(session) {
   if (session.renamed) {
@@ -26,8 +36,9 @@ function render(state) {
 
   name.textContent = session.name;
   meta.textContent = describe(session);
-  dot.className = `dot ${session.status === "busy" ? "busy" : "idle"}`;
-  dot.title = session.status === "busy" ? "working" : "idle";
+  const [cls, label] = statusOf(session.status);
+  dot.className = `dot ${cls}`;
+  dot.title = label;
 }
 
 function beginEdit() {

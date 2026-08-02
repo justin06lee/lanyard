@@ -103,7 +103,13 @@ fn placement(anchor: Anchor, win: &ax::FocusedWindow) -> (f64, f64) {
     (x.round(), y.round())
 }
 
-/// Ancestors of a pid, used to recognise the terminal app that hosts a session.
+/// The top-level application hosting a session, found by walking up from the
+/// Claude process through the shell and `login` to the terminal emulator.
+pub fn host_app(pid: i32) -> Option<i32> {
+    ancestors(pid).last().copied()
+}
+
+/// Ancestors of a pid, nearest first.
 fn ancestors(pid: i32) -> Vec<i32> {
     let mut out = Vec::new();
     let mut cursor = pid;
@@ -153,7 +159,7 @@ pub fn spawn(app: AppHandle, state: Arc<State>) {
 
 fn run(app: AppHandle, state: Arc<State>) {
     let mut env_cache: HashMap<i32, ProcEnv> = HashMap::new();
-    let mut ancestor_cache: HashMap<i32, Vec<i32>> = HashMap::new();
+    let mut ancestor_cache: HashMap<i32, Option<i32>> = HashMap::new();
     let mut stamped: HashMap<i32, String> = HashMap::new();
     let mut last_restamp = Instant::now() - RESTAMP_COOLDOWN;
 
@@ -179,13 +185,13 @@ fn run(app: AppHandle, state: Arc<State>) {
         // Terminal apps currently hosting a Claude session.
         let terminal_pids: HashSet<i32> = sessions
             .iter()
-            .flat_map(|s| {
-                ancestor_cache
-                    .entry(s.pid)
-                    .or_insert_with(|| ancestors(s.pid))
-                    .clone()
-            })
+            .filter_map(|s| *ancestor_cache.entry(s.pid).or_insert_with(|| host_app(s.pid)))
             .collect();
+
+        // gru's own window counts as "still on this session" so that clicking
+        // the floater to rename doesn't read as focus leaving the terminal.
+        let mut candidates: Vec<i32> = terminal_pids.iter().copied().collect();
+        candidates.push(own_pid);
 
         // Keep every session's window title tagged with its pid.
         if config.stamp_titles {
@@ -203,7 +209,7 @@ fn run(app: AppHandle, state: Arc<State>) {
         }
 
         // Resolve which session the user is actually looking at.
-        let focus = ax::focused_window();
+        let focus = ax::focused_window_among(&candidates);
         let mut focused_pid = None;
         if let Some(win) = &focus {
             if win.pid == own_pid {
