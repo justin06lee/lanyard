@@ -6,8 +6,8 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body class="floater">
-    <div class="pill" id="pill">
-      <span class="accent" id="accent" aria-hidden="true"></span>
+    <div class="card" id="card">
+      <div class="tile" id="tile" aria-hidden="true"></div>
       <div class="text" id="text">
         <div
           class="name"
@@ -17,11 +17,21 @@
         >
           —
         </div>
-        <input class="rename" id="rename" hidden autocomplete="off" spellcheck="false" />
+        <input
+          class="rename"
+          id="rename"
+          hidden
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Session name"
+        />
         <div class="desc" id="desc"></div>
       </div>
-      <button class="ghost" id="anchor" title="Move the floater to another corner">⤡</button>
+      <button class="ghost" id="anchor" title="Move the floater to another corner">
+        ⤢
+      </button>
     </div>
+    <script src="session.js"></script>
     <script src="floater.js"></script>
   </body>
 </html>

@@ -1,9 +1,11 @@
+const { describe, monogram, statusOf } = window.gru;
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const pill = document.getElementById("pill");
+const card = document.getElementById("card");
+const tile = document.getElementById("tile");
 const text = document.getElementById("text");
-const accent = document.getElementById("accent");
 const name = document.getElementById("name");
 const desc = document.getElementById("desc");
 const rename = document.getElementById("rename");
@@ -15,29 +17,22 @@ let shownId = null;
 
 /* ------------------------------------------------------------------ render */
 
-/** Secondary line: Claude's own summary of the work, else where it's running. */
-function describe(session) {
-  if (session.aiTitle) return session.aiTitle;
-  const path = session.subpath
-    ? `${session.repo}/${session.subpath}`
-    : session.repo;
-  return path === session.name ? "" : path;
-}
-
 function render(state) {
   const session = state.focused;
   if (!session) return;
   current = session;
 
-  const status = session.status;
-  accent.className = `accent ${status === "busy" || status === "waiting" ? status : ""}`;
-  accent.title = status || "idle";
+  const status = statusOf(session);
+  tile.className = `tile ${status}`;
+  tile.title = status;
 
   if (editing) return;
+
+  tile.textContent = monogram(session.name);
   name.textContent = session.name;
   desc.textContent = describe(session);
 
-  // Crossfade only when the session actually changed — not on every status tick.
+  // Crossfade only when the session actually changed, not on every status tick.
   if (session.sessionId !== shownId) {
     shownId = session.sessionId;
     text.classList.remove("swap");
@@ -54,7 +49,6 @@ function beginEdit() {
   rename.value = current.name;
   rename.hidden = false;
   name.hidden = true;
-  desc.hidden = true;
   rename.focus();
   rename.select();
 }
@@ -65,7 +59,6 @@ function endEdit(commit) {
   editing = false;
   rename.hidden = true;
   name.hidden = false;
-  desc.hidden = false;
 
   if (commit && current) {
     invoke("rename", {
@@ -97,7 +90,7 @@ anchor.addEventListener("click", () => invoke("cycle_anchor").catch(() => {}));
 /* -------------------------------------------------- drag, then rubber-band */
 
 // Displacement from the anchored position. The Rust side adds this to wherever
-// the floater is anchored, so the pill keeps tracking the terminal window even
+// the floater is anchored, so the card keeps tracking the terminal window even
 // while it is being held aside.
 let offX = 0;
 let offY = 0;
@@ -165,7 +158,7 @@ function springBack() {
   frame = requestAnimationFrame(settle);
 }
 
-pill.addEventListener("pointerdown", (e) => {
+card.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || editing) return;
   if (e.target === rename || e.target === anchor) return;
 
@@ -182,10 +175,10 @@ pill.addEventListener("pointerdown", (e) => {
   startY = e.screenY;
   baseX = offX;
   baseY = offY;
-  pill.setPointerCapture(e.pointerId);
+  card.setPointerCapture(e.pointerId);
 });
 
-pill.addEventListener("pointermove", (e) => {
+card.addEventListener("pointermove", (e) => {
   if (!armed) return;
 
   // Screen coordinates, not client: the window moves with the cursor, so the
@@ -196,7 +189,7 @@ pill.addEventListener("pointermove", (e) => {
   if (!dragging) {
     if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return;
     dragging = true;
-    pill.classList.add("dragging");
+    card.classList.add("dragging");
   }
 
   offX = baseX + dx;
@@ -207,17 +200,17 @@ pill.addEventListener("pointermove", (e) => {
 function endDrag(e) {
   if (!armed) return;
   armed = false;
-  if (pill.hasPointerCapture(e.pointerId)) pill.releasePointerCapture(e.pointerId);
+  if (card.hasPointerCapture(e.pointerId)) card.releasePointerCapture(e.pointerId);
   if (!dragging) return; // it was a click, not a drag
   dragging = false;
-  pill.classList.remove("dragging");
+  card.classList.remove("dragging");
   springBack();
 }
 
-pill.addEventListener("pointerup", endDrag);
-pill.addEventListener("pointercancel", endDrag);
+card.addEventListener("pointerup", endDrag);
+card.addEventListener("pointercancel", endDrag);
 
-/* ------------------------------------------------------------------- wiring */
+/* ------------------------------------------------------------------ wiring */
 
 listen("gru://state", (event) => render(event.payload));
 invoke("get_state").then(render).catch(() => {});

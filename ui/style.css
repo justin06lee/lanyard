@@ -1,15 +1,25 @@
+/* Design tokens follow Apple's Human Interface guidance: SF text styles, the
+   standard label/secondary-label opacities, and system accent colours. */
 :root {
-  --surface: #ffffff;
-  --ink: #16161d;
-  --muted: #6b7280;
-  --line: #e6e6ec;
-  --hairline: rgba(0, 0, 0, 0.08);
-  --cyan: #0aa5b8;
-  --pink: #d81b7a;
-  --amber: #d97706;
-  --ui: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue",
+  --sf:
+    -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
     system-ui, sans-serif;
-  --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+
+  --label: rgba(0, 0, 0, 0.85);
+  --secondary: rgba(60, 60, 67, 0.6);
+  --tertiary: rgba(60, 60, 67, 0.3);
+  --separator: rgba(0, 0, 0, 0.07);
+
+  --surface: #ffffff;
+  --canvas: #f2f2f7;
+
+  --blue: #007aff;
+  --orange: #ff9500;
+  --grey: #8e8e93;
+
+  /* Apple's standard ease for UI motion: quick out, gentle settle. */
+  --ease: cubic-bezier(0.32, 0.72, 0, 1);
 }
 
 * {
@@ -18,108 +28,127 @@
   padding: 0;
 }
 
+html,
 body {
-  font-family: var(--ui);
-  color: var(--ink);
+  /* Without this, percentage heights inside resolve against auto and the card
+     collapses to its text height. */
+  height: 100%;
+}
+
+body {
+  font-family: var(--sf);
+  color: var(--label);
   -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   user-select: none;
   cursor: default;
 }
 
-/* ---------- floater ---------- */
+/* ============================ floater ============================ */
 
-/* The window itself stays transparent so the card can have rounded corners and
-   its own shadow; the card is fully opaque. */
+/* The window is transparent so the card can own its corner radius and shadow.
+   The card itself is fully opaque. Padding leaves room for the shadow and for
+   the lift-on-drag scale. */
 body.floater {
   background: transparent;
   overflow: hidden;
-  /* Breathing room so the lift-on-drag scale and the shadow aren't clipped by
-     the window edge. */
-  padding: 7px;
+  padding: 8px;
 }
 
-.pill {
+.card {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 11px;
   height: 100%;
-  padding: 0 8px 0 14px;
-  border: 1px solid var(--hairline);
-  border-radius: 14px;
+  padding: 0 10px 0 13px;
+  border-radius: 15px;
   background: var(--surface);
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.06),
-    0 10px 30px rgba(0, 0, 0, 0.16);
+    0 0 0 0.5px rgba(0, 0, 0, 0.06),
+    0 2px 5px rgba(0, 0, 0, 0.06),
+    0 12px 30px rgba(0, 0, 0, 0.17);
   cursor: grab;
   transform: translateZ(0);
   transition:
-    box-shadow 180ms cubic-bezier(0.22, 1, 0.36, 1),
-    transform 180ms cubic-bezier(0.22, 1, 0.36, 1);
+    box-shadow 260ms var(--ease),
+    transform 260ms var(--ease);
 }
 
-.pill.dragging {
+.card.dragging {
   cursor: grabbing;
-  transform: scale(1.02);
+  transform: scale(1.018);
   box-shadow:
-    0 1px 2px rgba(0, 0, 0, 0.08),
-    0 18px 44px rgba(0, 0, 0, 0.24);
+    0 0 0 0.5px rgba(0, 0, 0, 0.06),
+    0 4px 10px rgba(0, 0, 0, 0.09),
+    0 22px 50px rgba(0, 0, 0, 0.26);
   will-change: transform;
+  transition:
+    box-shadow 180ms var(--ease),
+    transform 180ms var(--ease);
 }
 
-/* Entrance: settle down into place rather than popping.
-   `backwards`, not `both` — a forwards fill would pin `transform` to the base
-   value and stop `.dragging`'s scale from ever applying. */
-body.floater .pill {
-  animation: settle 220ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
+/* Entrance settles in rather than popping. `backwards`, never `forwards` — a
+   forwards fill would pin `transform` and defeat `.dragging`'s scale. */
+body.floater .card {
+  animation: settle 260ms var(--ease) backwards;
 }
 
 @keyframes settle {
   from {
     opacity: 0;
-    transform: translateY(-6px) scale(0.98);
+    transform: translateY(-8px) scale(0.97);
   }
 }
 
-/* Switching sessions crossfades the label instead of snapping it. */
-.text.swap {
-  animation: swap 200ms cubic-bezier(0.22, 1, 0.36, 1) backwards;
-}
+/* ---- leading tile: a monogram, tinted by what the session is doing ---- */
 
-@keyframes swap {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body.floater .pill,
-  .text.swap {
-    animation: none;
-  }
-  .pill,
-  .pill.dragging {
-    transition: none;
-  }
-}
-
-/* Status without a dot: a quiet accent rail down the leading edge. */
-.accent {
+.tile {
+  position: relative;
   flex: none;
-  width: 3px;
-  height: 34px;
-  border-radius: 3px;
-  background: var(--line);
-  transition: background 260ms ease;
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  background: var(--grey);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: -0.02em;
+  transition: background 420ms var(--ease);
 }
 
-.accent.busy {
-  background: var(--pink);
+.tile::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  /* A hint of top-down gloss, the way an app icon catches light. */
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.22),
+    rgba(255, 255, 255, 0)
+  );
+  pointer-events: none;
 }
 
-.accent.waiting {
-  background: var(--amber);
+.tile.busy {
+  background: var(--blue);
+  animation: breathe 2.4s ease-in-out infinite;
 }
+
+.tile.waiting {
+  background: var(--orange);
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.62;
+  }
+}
+
+/* ---- text ---- */
 
 .text {
   flex: 1;
@@ -127,10 +156,10 @@ body.floater .pill {
 }
 
 .name {
-  font-size: 18px;
-  font-weight: 590;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 19px;
+  letter-spacing: -0.012em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -138,68 +167,108 @@ body.floater .pill {
 }
 
 .name:focus-visible {
-  text-decoration: underline dotted var(--cyan);
+  text-decoration: underline dotted var(--blue);
   text-underline-offset: 3px;
 }
 
 .desc {
-  margin-top: 2px;
-  font-size: 12.5px;
-  line-height: 1.35;
-  color: var(--muted);
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 16px;
+  letter-spacing: -0.004em;
+  color: var(--secondary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-.rename {
-  width: 100%;
-  font: inherit;
-  font-size: 18px;
-  font-weight: 590;
-  color: var(--ink);
-  background: transparent;
-  border: none;
-  border-bottom: 1.5px solid var(--cyan);
-  outline: none;
-  padding: 0 0 1px;
-  user-select: text;
-  cursor: text;
+.desc:empty {
+  display: none;
 }
 
-/* Kept out of the way until you go looking for it. */
+.rename {
+  width: 100%;
+  font-family: inherit;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 19px;
+  letter-spacing: -0.012em;
+  color: var(--label);
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 0;
+  user-select: text;
+  cursor: text;
+  caret-color: var(--blue);
+}
+
+/* Switching sessions crossfades the label instead of snapping it. */
+.text.swap {
+  animation: swap 260ms var(--ease) backwards;
+}
+
+@keyframes swap {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+}
+
+/* ---- trailing affordance, revealed on hover ---- */
+
 .ghost {
   flex: none;
-  width: 26px;
-  height: 26px;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
   border: none;
   border-radius: 7px;
   background: transparent;
-  color: var(--muted);
-  font: inherit;
+  color: var(--secondary);
+  font-family: inherit;
   font-size: 13px;
   cursor: pointer;
   opacity: 0;
   transition:
-    opacity 160ms ease,
-    background 160ms ease,
-    color 160ms ease;
+    opacity 200ms var(--ease),
+    background 200ms var(--ease),
+    color 200ms var(--ease);
 }
 
-.pill:hover .ghost {
+.card:hover .ghost {
   opacity: 1;
 }
 
 .ghost:hover {
-  color: var(--ink);
-  background: rgba(0, 0, 0, 0.06);
+  color: var(--label);
+  background: rgba(0, 0, 0, 0.05);
 }
 
-/* ---------- panel ---------- */
+.ghost:active {
+  background: rgba(0, 0, 0, 0.09);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  body.floater .card,
+  .text.swap,
+  .tile.busy {
+    animation: none;
+  }
+  .card,
+  .card.dragging,
+  .tile,
+  .ghost {
+    transition: none;
+  }
+}
+
+/* ============================= panel ============================= */
 
 body.panel {
-  background: #f6f6f8;
-  padding: 14px;
+  background: var(--canvas);
+  padding: 16px;
   overflow-y: auto;
 }
 
@@ -207,65 +276,80 @@ body.panel {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  margin-bottom: 12px;
+  padding: 0 4px;
+  margin-bottom: 10px;
 }
 
 .panel-head h1 {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-  color: var(--muted);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
 }
 
 .count {
-  font-size: 11px;
-  color: var(--muted);
+  font-size: 12px;
+  color: var(--secondary);
 }
 
 .notice {
-  padding: 10px 12px;
+  padding: 12px 14px;
   margin-bottom: 12px;
-  border: 1px solid rgba(217, 119, 6, 0.35);
-  border-radius: 9px;
-  font-size: 12px;
-  line-height: 1.5;
-  color: #92400e;
-  background: #fffbeb;
+  border-radius: 12px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--label);
+  background: var(--surface);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.notice strong {
+  font-weight: 600;
 }
 
 .notice button {
-  margin-top: 8px;
-  padding: 5px 11px;
-  font: inherit;
-  font-size: 11px;
+  margin-top: 10px;
+  padding: 5px 12px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
   color: #fff;
-  background: var(--amber);
+  background: var(--blue);
   border: none;
-  border-radius: 6px;
+  border-radius: 7px;
   cursor: pointer;
+  transition: filter 160ms var(--ease);
+}
+
+.notice button:hover {
+  filter: brightness(1.08);
 }
 
 .snippet {
   display: block;
-  margin-top: 8px;
-  padding: 6px 8px;
-  border-radius: 6px;
+  margin-top: 9px;
+  padding: 7px 9px;
+  border-radius: 7px;
   font-family: var(--mono);
   font-size: 11px;
-  color: var(--ink);
-  background: rgba(0, 0, 0, 0.05);
+  color: var(--label);
+  background: var(--canvas);
   user-select: text;
   cursor: text;
   overflow-x: auto;
   white-space: nowrap;
 }
 
+/* Grouped list: one rounded container, hairline separators between rows. */
 .rows {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
   list-style: none;
+  border-radius: 12px;
+  background: var(--surface);
+  box-shadow:
+    0 0 0 0.5px rgba(0, 0, 0, 0.05),
+    0 1px 3px rgba(0, 0, 0, 0.05);
+  overflow: hidden;
 }
 
 .row {
@@ -273,35 +357,45 @@ body.panel {
   align-items: center;
   gap: 11px;
   padding: 10px 12px;
-  border: 1px solid var(--hairline);
-  border-radius: 10px;
-  background: var(--surface);
+  transition: background 160ms var(--ease);
+}
+
+.row + .row {
+  box-shadow: inset 0 0.5px 0 var(--separator);
 }
 
 .row.is-focused {
-  border-color: var(--cyan);
-  box-shadow: 0 0 0 2px rgba(10, 165, 184, 0.14);
+  background: rgba(0, 122, 255, 0.07);
 }
 
 .row .name {
-  font-size: 14px;
+  font-size: 13.5px;
+  font-weight: 600;
 }
 
 .row .desc {
   font-size: 11.5px;
+  line-height: 15px;
+}
+
+.row .tile {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  font-size: 13px;
 }
 
 .row .pid {
   flex: none;
   font-family: var(--mono);
-  font-size: 10px;
-  color: var(--muted);
+  font-size: 10.5px;
+  color: var(--tertiary);
 }
 
 .empty {
-  padding: 24px 4px;
-  font-size: 12px;
+  padding: 28px 4px;
+  font-size: 12.5px;
   line-height: 1.6;
-  color: var(--muted);
+  color: var(--secondary);
   text-align: center;
 }

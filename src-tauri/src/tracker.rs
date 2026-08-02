@@ -32,8 +32,10 @@ const RESTAMP_COOLDOWN: Duration = Duration::from_millis(750);
 /// emulator, so this costs nothing when nothing is contesting it.
 const STAMP_HEARTBEAT: Duration = Duration::from_secs(2);
 
+/// Window size. The card inside is inset by 8pt on every side, leaving room for
+/// its shadow and the lift-on-drag scale, so the visible card is 424×68.
 pub const FLOATER_W: f64 = 440.0;
-pub const FLOATER_H: f64 = 88.0;
+pub const FLOATER_H: f64 = 84.0;
 const MARGIN: f64 = 12.0;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]

@@ -1,3 +1,5 @@
+const { describe, monogram, statusOf } = window.gru;
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
@@ -7,28 +9,21 @@ const empty = document.getElementById("empty");
 const notice = document.getElementById("notice");
 const grant = document.getElementById("grant");
 const setup = document.getElementById("setup");
+const setupTitle = document.getElementById("setup-title");
 const setupText = document.getElementById("setup-text");
 
 let editing = null; // sessionId currently being renamed
-
-/** Claude's own summary of the work, else where the session is running. */
-function describe(session) {
-  if (session.aiTitle) return session.aiTitle;
-  const path = session.subpath
-    ? `${session.repo}/${session.subpath}`
-    : session.repo;
-  return path === session.name ? "" : path;
-}
 
 function buildRow(session) {
   const li = document.createElement("li");
   li.className = `row${session.focused ? " is-focused" : ""}`;
 
-  const status = session.status || "idle";
-  const accent = document.createElement("span");
-  accent.className = `accent ${status === "busy" || status === "waiting" ? status : ""}`;
-  accent.title = status;
-  li.appendChild(accent);
+  const status = statusOf(session);
+  const tile = document.createElement("div");
+  tile.className = `tile ${status}`;
+  tile.textContent = monogram(session.name);
+  tile.title = status;
+  li.appendChild(tile);
 
   const text = document.createElement("div");
   text.className = "text";
@@ -38,11 +33,11 @@ function buildRow(session) {
   name.textContent = session.name;
   name.title = `${session.cwd}\nDouble-click to rename`;
 
-  const meta = document.createElement("div");
-  meta.className = "desc";
-  meta.textContent = describe(session);
+  const desc = document.createElement("div");
+  desc.className = "desc";
+  desc.textContent = describe(session);
 
-  text.append(name, meta);
+  text.append(name, desc);
   li.appendChild(text);
 
   const pid = document.createElement("span");
@@ -50,11 +45,11 @@ function buildRow(session) {
   pid.textContent = session.pid;
   li.appendChild(pid);
 
-  name.addEventListener("dblclick", () => startEdit(text, name, meta, session));
+  name.addEventListener("dblclick", () => startEdit(text, name, session));
   return li;
 }
 
-function startEdit(text, name, meta, session) {
+function startEdit(text, name, session) {
   if (editing) return;
   editing = session.sessionId;
 
@@ -64,7 +59,6 @@ function startEdit(text, name, meta, session) {
   input.spellcheck = false;
 
   name.hidden = true;
-  meta.hidden = true;
   text.prepend(input);
   input.focus();
   input.select();
@@ -75,7 +69,6 @@ function startEdit(text, name, meta, session) {
     const value = input.value;
     input.remove();
     name.hidden = false;
-    meta.hidden = false;
     if (commit) {
       invoke("rename", {
         sessionId: session.sessionId,
@@ -103,16 +96,17 @@ function render(state) {
   setup.hidden = state.titleConflicts === 0;
   if (state.titleConflicts > 0) {
     const n = state.titleConflicts;
+    setupTitle.textContent = `${n} session${n === 1 ? "" : "s"} still control their own title.`;
     setupText.textContent =
-      `${n} session${n === 1 ? "" : "s"} still rewrite the terminal title, ` +
-      `so gru has to keep overwriting it. Add this to your shell profile and ` +
-      `restart those sessions:`;
+      " gru has to keep reclaiming it, which you may notice in Mission Control." +
+      " Add this to your shell profile and restart them:";
   }
 
   // Never yank the input out from under someone mid-rename.
   if (editing) return;
 
   rows.replaceChildren(...state.sessions.map(buildRow));
+  rows.hidden = state.sessions.length === 0;
   count.textContent = state.sessions.length
     ? `${state.sessions.length} running`
     : "";

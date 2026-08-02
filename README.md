@@ -8,10 +8,11 @@ always-on-top pill over the focused terminal telling you *which* session it is,
 named after its repository and renameable to whatever you like.
 
 ```
-   ╭───────────────────────────────────────────────╮
-   │ ▎ hikmah.chat                                 │
-   │   Analyze codebase and provide status report  │
-   ╰───────────────────────────────────────────────╯
+   ╭─────────────────────────────────────────────────╮
+   │  ┌───┐  hikmah.chat                             │
+   │  │ H │  Analyze codebase and provide status…    │
+   │  └───┘                                          │
+   ╰─────────────────────────────────────────────────╯
 ```
 
 - **Follows you across Desktops.** One floater, pinned to every Space.
@@ -22,8 +23,8 @@ named after its repository and renameable to whatever you like.
 - **The second line is Claude's own summary** of what that session is doing,
   read from the `ai-title` entries in its transcript. Sessions that haven't
   generated one yet fall back to the repo path.
-- **Live status** on the accent rail: neutral when idle, pink while Claude
-  works, amber when a session is blocked waiting on you.
+- **Live status** on the monogram tile, in system colours: grey when idle, blue
+  (gently breathing) while Claude works, orange when it's blocked waiting on you.
 - **Drag it aside** when it covers something; it springs back on release.
 
 ---

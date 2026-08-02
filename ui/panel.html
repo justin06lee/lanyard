@@ -7,16 +7,19 @@
   </head>
   <body class="panel">
     <header class="panel-head">
-      <h1>Claude sessions</h1>
+      <h1>Sessions</h1>
       <span class="count" id="count"></span>
     </header>
 
     <div class="notice" id="notice" hidden>
-      gru needs Accessibility access to see which terminal window is focused.
-      <button id="grant">Grant access…</button>
+      <strong>Accessibility access needed.</strong>
+      gru reads which terminal window has focus. Without it the floater stays
+      hidden.
+      <button id="grant">Open Privacy &amp; Security…</button>
     </div>
 
     <div class="notice" id="setup" hidden>
+      <strong id="setup-title"></strong>
       <span id="setup-text"></span>
       <code class="snippet">export CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1</code>
     </div>
@@ -24,6 +27,7 @@
     <ul class="rows" id="rows"></ul>
     <p class="empty" id="empty" hidden>No Claude Code sessions running.</p>
 
+    <script src="session.js"></script>
     <script src="panel.js"></script>
   </body>
 </html>
