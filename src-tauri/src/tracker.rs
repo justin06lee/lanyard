@@ -22,6 +22,15 @@ const RESCAN_EVERY: Duration = Duration::from_millis(1000);
 /// Sessions started without `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` keep rewriting
 /// their own title, so gru has to re-stamp. Throttle that tug-of-war.
 const RESTAMP_COOLDOWN: Duration = Duration::from_millis(750);
+/// Re-stamp every title periodically, not just when a bad one is noticed.
+///
+/// gru can only detect a clobbered title on the window it can see — the focused
+/// one. A background window whose title Claude Code overwrote would stay stale
+/// until you switched to it, and gru would then briefly assert the *previous*
+/// session's name. Showing the wrong name is worse than showing none, so keep
+/// every title fresh instead. Writing an identical title is a no-op for the
+/// emulator, so this costs nothing when nothing is contesting it.
+const STAMP_HEARTBEAT: Duration = Duration::from_secs(2);
 
 pub const FLOATER_W: f64 = 320.0;
 pub const FLOATER_H: f64 = 56.0;
@@ -162,6 +171,7 @@ fn run(app: AppHandle, state: Arc<State>) {
     let mut ancestor_cache: HashMap<i32, Option<i32>> = HashMap::new();
     let mut stamped: HashMap<i32, String> = HashMap::new();
     let mut last_restamp = Instant::now() - RESTAMP_COOLDOWN;
+    let mut last_heartbeat = Instant::now() - STAMP_HEARTBEAT;
 
     let mut sessions: Vec<Session> = Vec::new();
     let mut last_scan = Instant::now() - RESCAN_EVERY;
@@ -195,7 +205,11 @@ fn run(app: AppHandle, state: Arc<State>) {
 
         // Keep every session's window title tagged with its pid.
         if config.stamp_titles {
-            let force = state.restamp.swap(false, Ordering::SeqCst);
+            let heartbeat = last_heartbeat.elapsed() >= STAMP_HEARTBEAT;
+            if heartbeat {
+                last_heartbeat = Instant::now();
+            }
+            let force = state.restamp.swap(false, Ordering::SeqCst) || heartbeat;
             for s in &sessions {
                 let Some(tty) = s.tty.as_deref() else { continue };
                 let name = config.name_for(&s.session_id, &s.cwd, &s.repo);
