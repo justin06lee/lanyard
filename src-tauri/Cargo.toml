@@ -9,6 +9,15 @@ rust-version = "1.77"
 name = "gru_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Declared explicitly so bundling can't pick the wrong executable.
+[[bin]]
+name = "gru"
+path = "src/main.rs"
+
+[[bin]]
+name = "gru-doctor"
+path = "src/bin/gru-doctor.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

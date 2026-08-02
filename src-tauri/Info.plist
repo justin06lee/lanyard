@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Menu-bar only: no Dock icon, and no Dock flash at launch. The runtime
+	     also sets NSApplicationActivationPolicyAccessory, but doing it here
+	     means it is true from the moment the process starts. -->
+	<key>LSUIElement</key>
+	<true/>
+</dict>
+</plist>

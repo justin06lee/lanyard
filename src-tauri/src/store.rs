@@ -34,8 +34,10 @@ impl Anchor {
     }
 }
 
+/// Top-right by default: Claude Code's TUI is left-aligned with a wide right
+/// margin at typical window widths, so this covers the least actual text.
 fn default_anchor() -> Anchor {
-    Anchor::TopCenter
+    Anchor::TopRight
 }
 
 fn default_true() -> bool {

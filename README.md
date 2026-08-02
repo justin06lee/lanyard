@@ -54,7 +54,7 @@ Claude Code sessions afterwards.
 | --- | --- |
 | Rename the focused session | Double-click the name on the floater |
 | Reset to the repo name | Rename it to an empty string |
-| Move the floater | Click ⤡ on the pill, or tray › *Move floater* — cycles the six corners |
+| Move the floater | Click ⤡ on the pill, or tray › *Move floater* — cycles the six positions |
 | See every session | Tray › *Sessions…* |
 | Hide/show the floater | Tray › *Toggle floater* |
 
@@ -151,6 +151,11 @@ cargo run --manifest-path src-tauri/Cargo.toml --bin gru-doctor
 The dev build is a different binary from the bundled app, so macOS treats it as
 a separate Accessibility entry — you'll be asked to grant access twice.
 
+The app is unsigned, and macOS keys Accessibility grants to a binary's code
+hash, so **every rebuild needs re-approving**. If the floater stops appearing
+after `npm run build`, remove the stale gru entry in System Settings › Privacy
+& Security › Accessibility and add the new one.
+
 ---
 
 ## Troubleshooting
@@ -167,3 +172,11 @@ tug-of-war — run `./scripts/setup-shell.sh` and restart those sessions.
 **A session is missing from the panel.** gru lists interactive sessions with a
 live pid and a controlling tty; background agents (`--bg`) are excluded by
 design.
+
+`gru-doctor` ships inside the bundle too, so an installed copy can be checked
+without the source tree:
+
+```bash
+/Applications/gru.app/Contents/MacOS/gru-doctor
+/Applications/gru.app/Contents/MacOS/gru-doctor 1239   # probe a specific app pid
+```
