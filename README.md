@@ -8,9 +8,10 @@ always-on-top pill over the focused terminal telling you *which* session it is,
 named after its repository and renameable to whatever you like.
 
 ```
-   ╭──────────────────────────────────╮
-   │ ● hikmah.chat        web-client  │
-   ╰──────────────────────────────────╯
+   ╭───────────────────────────────────────────────╮
+   │ ▎ hikmah.chat                                 │
+   │   Analyze codebase and provide status report  │
+   ╰───────────────────────────────────────────────╯
 ```
 
 - **Follows you across Desktops.** One floater, pinned to every Space.
@@ -18,8 +19,12 @@ named after its repository and renameable to whatever you like.
   screen and the tag updates.
 - **Names itself from the repo**, and remembers renames per session *and* per
   directory, so tomorrow's session in the same checkout keeps the name.
-- **Live status.** The dot rests cyan when idle, pulses pink while Claude works,
-  and turns amber when a session is blocked waiting on you.
+- **The second line is Claude's own summary** of what that session is doing,
+  read from the `ai-title` entries in its transcript. Sessions that haven't
+  generated one yet fall back to the repo path.
+- **Live status** on the accent rail: neutral when idle, pink while Claude
+  works, amber when a session is blocked waiting on you.
+- **Drag it aside** when it covers something; it springs back on release.
 
 ---
 
@@ -54,7 +59,8 @@ Claude Code sessions afterwards.
 | --- | --- |
 | Rename the focused session | Double-click the name on the floater |
 | Reset to the repo name | Rename it to an empty string |
-| Move the floater | Click ⤡ on the pill, or tray › *Move floater* — cycles the six positions |
+| Peek under the floater | Drag it aside; it rubber-bands back when you let go |
+| Move the floater for good | Click ⤡ on the pill, or tray › *Move floater* — cycles the six positions |
 | See every session | Tray › *Sessions…* |
 | Hide/show the floater | Tray › *Toggle floater* |
 

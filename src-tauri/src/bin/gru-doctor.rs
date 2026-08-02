@@ -5,8 +5,6 @@
 //!
 //!     cargo run --manifest-path src-tauri/Cargo.toml --bin gru-doctor
 
-use std::collections::HashMap;
-
 use gru_lib::{ax, sessions, store::Config, title, tracker::host_app};
 
 fn main() {
@@ -25,8 +23,7 @@ fn main() {
     println!("config        : {}", store_path());
     println!();
 
-    let mut cache = HashMap::new();
-    let found = sessions::scan(&mut cache);
+    let found = sessions::Scanner::default().scan();
     println!("sessions ({})", found.len());
     if found.is_empty() {
         println!("  none — is Claude Code running interactively?");
@@ -43,6 +40,9 @@ fn main() {
             s.window_id.as_deref().unwrap_or("-"),
         );
         println!("          {}", s.cwd);
+        if let Some(summary) = &s.ai_title {
+            println!("          “{summary}”");
+        }
     }
 
     let contested = found.iter().filter(|s| !s.title_disabled).count();

@@ -11,22 +11,24 @@ const setupText = document.getElementById("setup-text");
 
 let editing = null; // sessionId currently being renamed
 
+/** Claude's own summary of the work, else where the session is running. */
 function describe(session) {
+  if (session.aiTitle) return session.aiTitle;
   const path = session.subpath
     ? `${session.repo}/${session.subpath}`
     : session.repo;
-  return session.renamed ? path : path === session.name ? "" : path;
+  return path === session.name ? "" : path;
 }
 
 function buildRow(session) {
   const li = document.createElement("li");
   li.className = `row${session.focused ? " is-focused" : ""}`;
 
-  const dot = document.createElement("span");
   const status = session.status || "idle";
-  dot.className = `dot ${["busy", "waiting"].includes(status) ? status : "idle"}`;
-  dot.title = status;
-  li.appendChild(dot);
+  const accent = document.createElement("span");
+  accent.className = `accent ${status === "busy" || status === "waiting" ? status : ""}`;
+  accent.title = status;
+  li.appendChild(accent);
 
   const text = document.createElement("div");
   text.className = "text";
@@ -37,7 +39,7 @@ function buildRow(session) {
   name.title = `${session.cwd}\nDouble-click to rename`;
 
   const meta = document.createElement("div");
-  meta.className = "meta";
+  meta.className = "desc";
   meta.textContent = describe(session);
 
   text.append(name, meta);

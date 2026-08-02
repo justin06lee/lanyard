@@ -9,7 +9,9 @@ use std::sync::Arc;
 
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent};
+use tauri::{
+    AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+};
 
 use store::Config;
 use tracker::{Snapshot, State, FLOATER_H, FLOATER_W};
@@ -54,6 +56,22 @@ fn set_enabled(enabled: bool, state: tauri::State<'_, Arc<State>>) -> Result<(),
 #[tauri::command]
 fn request_accessibility() -> bool {
     ax::request_trust()
+}
+
+/// Displaces the floater from its anchor while the user drags it aside.
+///
+/// The UI calls this every frame during a drag and again as it springs back to
+/// `(0, 0)` on release. Repositioning here rather than waiting for the tracker's
+/// next tick is what makes the drag feel attached to the cursor; the tracker
+/// keeps applying the same offset so the pill still follows the terminal window
+/// if it moves mid-drag.
+#[tauri::command]
+fn set_drag_offset(x: f64, y: f64, app: AppHandle, state: tauri::State<'_, Arc<State>>) {
+    *state.drag_offset.lock().unwrap() = (x, y);
+    let anchor = *state.anchor_pos.lock().unwrap();
+    if let (Some(window), Some((ax, ay))) = (app.get_webview_window("floater"), anchor) {
+        let _ = window.set_position(LogicalPosition::new(ax + x, ay + y));
+    }
 }
 
 #[tauri::command]
@@ -156,6 +174,7 @@ pub fn run() {
             cycle_anchor,
             set_enabled,
             request_accessibility,
+            set_drag_offset,
             open_panel
         ])
         .setup(move |app| {

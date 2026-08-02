@@ -8,6 +8,7 @@
 
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -32,6 +33,9 @@ pub struct Session {
     /// True when this session was launched with CLAUDE_CODE_DISABLE_TERMINAL_TITLE
     /// set, meaning gru owns the window title outright instead of contesting it.
     pub title_disabled: bool,
+    /// Claude Code's own one-line summary of what this session is doing, lifted
+    /// from the `ai-title` entries in its transcript.
+    pub ai_title: Option<String>,
     pub started_at: Option<i64>,
 }
 
@@ -105,6 +109,58 @@ fn proc_env(pid: i32) -> ProcEnv {
     env
 }
 
+/// Remembers where a session's transcript lives and what we last read from it.
+#[derive(Debug, Clone, Default)]
+struct Transcript {
+    path: Option<PathBuf>,
+    /// File length at the last read, used to skip re-parsing an idle session.
+    len: u64,
+    title: Option<String>,
+}
+
+/// Transcripts are named `<sessionId>.jsonl` under a per-project directory whose
+/// name is a mangled cwd. Rather than reproduce that mangling, just look for the
+/// session id — it is unique across projects.
+fn find_transcript(session_id: &str) -> Option<PathBuf> {
+    let projects = claude_dir().join("projects");
+    for entry in std::fs::read_dir(projects).ok()?.flatten() {
+        let candidate = entry.path().join(format!("{session_id}.jsonl"));
+        if candidate.is_file() {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// Transcripts run to megabytes, so only the tail is read. `ai-title` is
+/// rewritten on every turn, so the newest one is always near the end.
+const TRANSCRIPT_TAIL: u64 = 128 * 1024;
+
+fn read_ai_title(path: &Path) -> Option<(u64, Option<String>)> {
+    let mut file = std::fs::File::open(path).ok()?;
+    let len = file.metadata().ok()?.len();
+    file.seek(SeekFrom::Start(len.saturating_sub(TRANSCRIPT_TAIL)))
+        .ok()?;
+
+    let mut bytes = Vec::new();
+    file.read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+
+    // The first line is usually a fragment; it simply fails to parse and is skipped.
+    let mut title = None;
+    for line in text.lines() {
+        if !line.contains("\"ai-title\"") {
+            continue;
+        }
+        if let Ok(value) = serde_json::from_str::<serde_json::Value>(line) {
+            if let Some(found) = value.get("aiTitle").and_then(|v| v.as_str()) {
+                title = Some(found.to_string());
+            }
+        }
+    }
+    Some((len, title))
+}
+
 /// Walks up from `cwd` looking for a `.git` entry (dir for repos, file for worktrees).
 fn git_root(cwd: &Path) -> Option<PathBuf> {
     let mut cursor = Some(cwd);
@@ -123,114 +179,151 @@ fn basename(path: &Path) -> String {
         .unwrap_or_else(|| path.to_string_lossy().into_owned())
 }
 
-/// Scans for live interactive sessions.
+/// Owns the caches that keep repeated scans cheap.
 ///
-/// `env_cache` memoises the per-pid `ps eww` lookup: a process's environment
-/// never changes, and shelling out for eight sessions every tick would be waste.
-pub fn scan(env_cache: &mut HashMap<i32, ProcEnv>) -> Vec<Session> {
-    let table = process_table();
-    let dir = claude_dir().join("sessions");
-    let Ok(entries) = std::fs::read_dir(&dir) else {
-        return Vec::new();
-    };
+/// A process's environment never changes and a transcript only needs re-reading
+/// when it grows, so neither is worth redoing on every tick.
+#[derive(Default)]
+pub struct Scanner {
+    env: HashMap<i32, ProcEnv>,
+    transcripts: HashMap<String, Transcript>,
+}
 
-    let mut sessions = Vec::new();
-    // Directory enclosing each session's repo, kept to disambiguate collisions.
-    let mut enclosing = Vec::new();
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if path.extension().and_then(|e| e.to_str()) != Some("json") {
-            continue;
-        }
-        let Ok(raw) = std::fs::read_to_string(&path) else {
-            continue;
-        };
-        let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
-            continue;
+impl Scanner {
+    /// Reads the current set of live interactive sessions.
+    pub fn scan(&mut self) -> Vec<Session> {
+        let table = process_table();
+        let dir = claude_dir().join("sessions");
+        let Ok(entries) = std::fs::read_dir(&dir) else {
+            return Vec::new();
         };
 
-        let pid = value.get("pid").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
-        if pid <= 0 {
-            continue;
-        }
+        let mut sessions = Vec::new();
+        // Directory enclosing each session's repo, kept to disambiguate collisions.
+        let mut enclosing = Vec::new();
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().and_then(|e| e.to_str()) != Some("json") {
+                continue;
+            }
+            let Ok(raw) = std::fs::read_to_string(&path) else {
+                continue;
+            };
+            let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                continue;
+            };
 
-        // Guard against both stale files and pid reuse.
-        let Some((tty, comm)) = table.get(&pid) else {
-            continue;
-        };
-        if !comm.contains("claude") {
-            continue;
-        }
-        if value.get("kind").and_then(|v| v.as_str()) == Some("background") {
-            continue;
-        }
+            let pid = value.get("pid").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
+            if pid <= 0 {
+                continue;
+            }
 
-        let cwd = value
-            .get("cwd")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default()
-            .to_string();
-        let cwd_path = PathBuf::from(&cwd);
-        let root = git_root(&cwd_path);
-        let repo = root
-            .as_deref()
-            .map(basename)
-            .unwrap_or_else(|| basename(&cwd_path));
-        let subpath = root
-            .as_deref()
-            .and_then(|r| cwd_path.strip_prefix(r).ok())
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default();
+            // Guard against both stale files and pid reuse.
+            let Some((tty, comm)) = table.get(&pid) else {
+                continue;
+            };
+            if !comm.contains("claude") {
+                continue;
+            }
+            if value.get("kind").and_then(|v| v.as_str()) == Some("background") {
+                continue;
+            }
 
-        let env = env_cache.entry(pid).or_insert_with(|| proc_env(pid)).clone();
-
-        enclosing.push(
-            root.as_deref()
-                .and_then(Path::parent)
-                .map(basename)
-                .unwrap_or_default(),
-        );
-
-        sessions.push(Session {
-            pid,
-            session_id: value
+            let session_id = value
                 .get("sessionId")
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
-                .to_string(),
-            cwd,
-            repo,
-            subpath,
-            claude_name: value
-                .get("name")
+                .to_string();
+            let cwd = value
+                .get("cwd")
                 .and_then(|v| v.as_str())
-                .map(str::to_string),
-            status: value
-                .get("status")
-                .and_then(|v| v.as_str())
-                .map(str::to_string),
-            tty: tty.clone(),
-            window_id: env.window_id,
-            title_disabled: env.title_disabled,
-            started_at: value.get("startedAt").and_then(|v| v.as_i64()),
-        });
-    }
+                .unwrap_or_default()
+                .to_string();
+            let cwd_path = PathBuf::from(&cwd);
+            let root = git_root(&cwd_path);
+            let repo = root
+                .as_deref()
+                .map(basename)
+                .unwrap_or_else(|| basename(&cwd_path));
+            let subpath = root
+                .as_deref()
+                .and_then(|r| cwd_path.strip_prefix(r).ok())
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
 
-    // Drop cache entries for sessions that have exited.
-    env_cache.retain(|pid, _| table.contains_key(pid));
+            let env = self.env.entry(pid).or_insert_with(|| proc_env(pid)).clone();
+            let ai_title = self.ai_title(&session_id);
 
-    // A bare repo name is useless when two checkouts share it — `web-client`
-    // says nothing when you have three. Qualify only the ones that collide.
-    let mut counts: HashMap<String, usize> = HashMap::new();
-    for session in &sessions {
-        *counts.entry(session.repo.clone()).or_default() += 1;
-    }
-    for (session, parent) in sessions.iter_mut().zip(&enclosing) {
-        if counts.get(&session.repo).copied().unwrap_or(0) > 1 && !parent.is_empty() {
-            session.repo = format!("{parent}/{}", session.repo);
+            enclosing.push(
+                root.as_deref()
+                    .and_then(Path::parent)
+                    .map(basename)
+                    .unwrap_or_default(),
+            );
+
+            sessions.push(Session {
+                pid,
+                session_id,
+                cwd,
+                repo,
+                subpath,
+                claude_name: value
+                    .get("name")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                status: value
+                    .get("status")
+                    .and_then(|v| v.as_str())
+                    .map(str::to_string),
+                tty: tty.clone(),
+                window_id: env.window_id,
+                title_disabled: env.title_disabled,
+                ai_title,
+                started_at: value.get("startedAt").and_then(|v| v.as_i64()),
+            });
         }
+
+        // Drop cache entries for sessions that have exited.
+        self.env.retain(|pid, _| table.contains_key(pid));
+        self.transcripts
+            .retain(|id, _| sessions.iter().any(|s| &s.session_id == id));
+
+        // A bare repo name is useless when two checkouts share it — `web-client`
+        // says nothing when you have three. Qualify only the ones that collide.
+        let mut counts: HashMap<String, usize> = HashMap::new();
+        for session in &sessions {
+            *counts.entry(session.repo.clone()).or_default() += 1;
+        }
+        for (session, parent) in sessions.iter_mut().zip(&enclosing) {
+            if counts.get(&session.repo).copied().unwrap_or(0) > 1 && !parent.is_empty() {
+                session.repo = format!("{parent}/{}", session.repo);
+            }
+        }
+
+        sessions.sort_by_key(|s| (s.started_at.unwrap_or(0), s.pid));
+        sessions
     }
 
-    sessions.sort_by_key(|s| (s.started_at.unwrap_or(0), s.pid));
-    sessions
+    /// Claude Code's own summary for a session, re-read only when the
+    /// transcript has grown since last time.
+    fn ai_title(&mut self, session_id: &str) -> Option<String> {
+        let entry = self.transcripts.entry(session_id.to_string()).or_default();
+        if entry.path.is_none() {
+            entry.path = find_transcript(session_id);
+        }
+        let path = entry.path.clone()?;
+
+        match read_ai_title(&path) {
+            Some((len, title)) if len != entry.len => {
+                entry.len = len;
+                entry.title = title;
+            }
+            None => {
+                // Transcript vanished (session ended, or was moved) — re-find next tick.
+                entry.path = None;
+            }
+            _ => {}
+        }
+        entry.title.clone()
+    }
 }

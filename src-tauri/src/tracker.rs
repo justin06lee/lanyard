@@ -13,7 +13,7 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager};
 
 use crate::ax;
-use crate::sessions::{self, ProcEnv, Session};
+use crate::sessions::{Scanner, Session};
 use crate::store::{Anchor, Config};
 use crate::title;
 
@@ -32,8 +32,8 @@ const RESTAMP_COOLDOWN: Duration = Duration::from_millis(750);
 /// emulator, so this costs nothing when nothing is contesting it.
 const STAMP_HEARTBEAT: Duration = Duration::from_secs(2);
 
-pub const FLOATER_W: f64 = 320.0;
-pub const FLOATER_H: f64 = 56.0;
+pub const FLOATER_W: f64 = 440.0;
+pub const FLOATER_H: f64 = 88.0;
 const MARGIN: f64 = 12.0;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -46,6 +46,8 @@ pub struct SessionView {
     pub subpath: String,
     pub cwd: String,
     pub claude_name: Option<String>,
+    /// Claude Code's auto-generated summary of what this session is doing.
+    pub ai_title: Option<String>,
     pub status: Option<String>,
     pub renamed: bool,
     pub focused: bool,
@@ -69,6 +71,12 @@ pub struct State {
     pub snapshot: Mutex<Snapshot>,
     /// Set after a rename (or when a title is found untagged) to force a rewrite.
     pub restamp: AtomicBool,
+    /// Live drag displacement from the anchored position, in logical points.
+    /// The UI writes this while you drag and springs it back to zero on release.
+    pub drag_offset: Mutex<(f64, f64)>,
+    /// Where the tracker last anchored the floater, so a drag can reposition
+    /// immediately instead of waiting for the next tick.
+    pub anchor_pos: Mutex<Option<(f64, f64)>>,
 }
 
 impl State {
@@ -77,6 +85,8 @@ impl State {
             config: Mutex::new(config),
             snapshot: Mutex::new(Snapshot::default()),
             restamp: AtomicBool::new(true),
+            drag_offset: Mutex::new((0.0, 0.0)),
+            anchor_pos: Mutex::new(None),
         }
     }
 }
@@ -155,6 +165,7 @@ fn views(sessions: &[Session], config: &Config, focused_pid: Option<i32>) -> Vec
                 subpath: s.subpath.clone(),
                 cwd: s.cwd.clone(),
                 claude_name: s.claude_name.clone(),
+                ai_title: s.ai_title.clone(),
                 status: s.status.clone(),
                 focused: Some(s.pid) == focused_pid,
             }
@@ -167,7 +178,7 @@ pub fn spawn(app: AppHandle, state: Arc<State>) {
 }
 
 fn run(app: AppHandle, state: Arc<State>) {
-    let mut env_cache: HashMap<i32, ProcEnv> = HashMap::new();
+    let mut scanner = Scanner::default();
     let mut ancestor_cache: HashMap<i32, Option<i32>> = HashMap::new();
     let mut stamped: HashMap<i32, String> = HashMap::new();
     let mut last_restamp = Instant::now() - RESTAMP_COOLDOWN;
@@ -186,7 +197,7 @@ fn run(app: AppHandle, state: Arc<State>) {
         let config = state.config.lock().unwrap().clone();
 
         if last_scan.elapsed() >= RESCAN_EVERY {
-            sessions = sessions::scan(&mut env_cache);
+            sessions = scanner.scan();
             last_scan = Instant::now();
             ancestor_cache.retain(|pid, _| sessions.iter().any(|s| s.pid == *pid));
             stamped.retain(|pid, _| sessions.iter().any(|s| s.pid == *pid));
@@ -276,8 +287,13 @@ fn run(app: AppHandle, state: Arc<State>) {
                     // While the floater is focused its own rect is reported, so
                     // only reposition from a real terminal window.
                     if win.pid != own_pid && win.w > 0.0 && win.h > 0.0 {
-                        let (x, y) = placement(config.anchor, win);
-                        let _ = floater.set_position(LogicalPosition::new(x, y));
+                        let anchor = placement(config.anchor, win);
+                        *state.anchor_pos.lock().unwrap() = Some(anchor);
+                        // Honour any in-flight drag: the anchor keeps tracking
+                        // the terminal window even while the pill is displaced.
+                        let (dx, dy) = *state.drag_offset.lock().unwrap();
+                        let _ = floater
+                            .set_position(LogicalPosition::new(anchor.0 + dx, anchor.1 + dy));
                     }
                 }
                 if !floater_visible {

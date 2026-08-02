@@ -7,11 +7,18 @@
   </head>
   <body class="floater">
     <div class="pill" id="pill">
-      <span class="dot" id="dot" aria-hidden="true"></span>
-      <div class="text">
-        <div class="name" id="name" tabindex="0" title="Double-click to rename">—</div>
+      <span class="accent" id="accent" aria-hidden="true"></span>
+      <div class="text" id="text">
+        <div
+          class="name"
+          id="name"
+          tabindex="0"
+          title="Double-click to rename · drag to move it aside"
+        >
+          —
+        </div>
         <input class="rename" id="rename" hidden autocomplete="off" spellcheck="false" />
-        <div class="meta" id="meta"></div>
+        <div class="desc" id="desc"></div>
       </div>
       <button class="ghost" id="anchor" title="Move the floater to another corner">⤡</button>
     </div>
