@@ -6,6 +6,8 @@ const count = document.getElementById("count");
 const empty = document.getElementById("empty");
 const notice = document.getElementById("notice");
 const grant = document.getElementById("grant");
+const setup = document.getElementById("setup");
+const setupText = document.getElementById("setup-text");
 
 let editing = null; // sessionId currently being renamed
 
@@ -93,6 +95,15 @@ function startEdit(text, name, meta, session) {
 
 function render(state) {
   notice.hidden = state.axTrusted;
+
+  setup.hidden = state.titleConflicts === 0;
+  if (state.titleConflicts > 0) {
+    const n = state.titleConflicts;
+    setupText.textContent =
+      `${n} session${n === 1 ? "" : "s"} still rewrite the terminal title, ` +
+      `so gru has to keep overwriting it. Add this to your shell profile and ` +
+      `restart those sessions:`;
+  }
 
   // Never yank the input out from under someone mid-rename.
   if (editing) return;

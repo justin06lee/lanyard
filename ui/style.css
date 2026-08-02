@@ -204,6 +204,20 @@ body.panel {
   cursor: pointer;
 }
 
+.snippet {
+  display: block;
+  margin-top: 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  font-size: 11px;
+  color: var(--fg);
+  background: rgba(0, 0, 0, 0.45);
+  user-select: text;
+  cursor: text;
+  overflow-x: auto;
+  white-space: nowrap;
+}
+
 .rows {
   display: flex;
   flex-direction: column;

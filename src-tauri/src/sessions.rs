@@ -29,7 +29,18 @@ pub struct Session {
     pub tty: Option<String>,
     /// Terminal window id from the environment (Alacritty, kitty, WezTerm, …).
     pub window_id: Option<String>,
+    /// True when this session was launched with CLAUDE_CODE_DISABLE_TERMINAL_TITLE
+    /// set, meaning gru owns the window title outright instead of contesting it.
+    pub title_disabled: bool,
     pub started_at: Option<i64>,
+}
+
+/// The slice of a session's environment gru cares about. Immutable for the
+/// lifetime of the process, so it is read once and cached.
+#[derive(Debug, Clone, Default)]
+pub struct ProcEnv {
+    pub window_id: Option<String>,
+    pub title_disabled: bool,
 }
 
 pub fn home_dir() -> PathBuf {
@@ -72,25 +83,26 @@ const WINDOW_ID_VARS: [&str; 5] = [
     "WINDOWID",
 ];
 
-fn window_id_of(pid: i32) -> Option<String> {
-    let out = Command::new("ps")
+fn proc_env(pid: i32) -> ProcEnv {
+    let mut env = ProcEnv::default();
+    let Ok(out) = Command::new("ps")
         .args(["eww", "-p", &pid.to_string()])
         .output()
-        .ok()?;
+    else {
+        return env;
+    };
     let text = String::from_utf8_lossy(&out.stdout);
     for token in text.split_whitespace() {
-        for var in WINDOW_ID_VARS {
-            if let Some(value) = token
-                .strip_prefix(var)
-                .and_then(|rest| rest.strip_prefix('='))
-            {
-                if !value.is_empty() {
-                    return Some(value.to_string());
-                }
-            }
+        let Some((key, value)) = token.split_once('=') else {
+            continue;
+        };
+        if key == "CLAUDE_CODE_DISABLE_TERMINAL_TITLE" {
+            env.title_disabled = !matches!(value, "" | "0" | "false");
+        } else if env.window_id.is_none() && WINDOW_ID_VARS.contains(&key) && !value.is_empty() {
+            env.window_id = Some(value.to_string());
         }
     }
-    None
+    env
 }
 
 /// Walks up from `cwd` looking for a `.git` entry (dir for repos, file for worktrees).
@@ -115,7 +127,7 @@ fn basename(path: &Path) -> String {
 ///
 /// `env_cache` memoises the per-pid `ps eww` lookup: a process's environment
 /// never changes, and shelling out for eight sessions every tick would be waste.
-pub fn scan(env_cache: &mut HashMap<i32, Option<String>>) -> Vec<Session> {
+pub fn scan(env_cache: &mut HashMap<i32, ProcEnv>) -> Vec<Session> {
     let table = process_table();
     let dir = claude_dir().join("sessions");
     let Ok(entries) = std::fs::read_dir(&dir) else {
@@ -168,10 +180,7 @@ pub fn scan(env_cache: &mut HashMap<i32, Option<String>>) -> Vec<Session> {
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default();
 
-        let window_id = env_cache
-            .entry(pid)
-            .or_insert_with(|| window_id_of(pid))
-            .clone();
+        let env = env_cache.entry(pid).or_insert_with(|| proc_env(pid)).clone();
 
         sessions.push(Session {
             pid,
@@ -192,7 +201,8 @@ pub fn scan(env_cache: &mut HashMap<i32, Option<String>>) -> Vec<Session> {
                 .and_then(|v| v.as_str())
                 .map(str::to_string),
             tty: tty.clone(),
-            window_id,
+            window_id: env.window_id,
+            title_disabled: env.title_disabled,
             started_at: value.get("startedAt").and_then(|v| v.as_i64()),
         });
     }

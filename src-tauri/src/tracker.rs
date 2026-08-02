@@ -13,12 +13,15 @@ use std::time::{Duration, Instant};
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager};
 
 use crate::ax;
-use crate::sessions::{self, Session};
+use crate::sessions::{self, ProcEnv, Session};
 use crate::store::{Anchor, Config};
 use crate::title;
 
 const FOCUS_TICK: Duration = Duration::from_millis(200);
 const RESCAN_EVERY: Duration = Duration::from_millis(1000);
+/// Sessions started without `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` keep rewriting
+/// their own title, so gru has to re-stamp. Throttle that tug-of-war.
+const RESTAMP_COOLDOWN: Duration = Duration::from_millis(750);
 
 pub const FLOATER_W: f64 = 320.0;
 pub const FLOATER_H: f64 = 56.0;
@@ -47,6 +50,8 @@ pub struct Snapshot {
     pub ax_trusted: bool,
     pub enabled: bool,
     pub anchor_label: String,
+    /// Sessions still competing with gru for their terminal title.
+    pub title_conflicts: usize,
 }
 
 /// Shared state between the tracker thread and the Tauri commands.
@@ -147,9 +152,10 @@ pub fn spawn(app: AppHandle, state: Arc<State>) {
 }
 
 fn run(app: AppHandle, state: Arc<State>) {
-    let mut env_cache: HashMap<i32, Option<String>> = HashMap::new();
+    let mut env_cache: HashMap<i32, ProcEnv> = HashMap::new();
     let mut ancestor_cache: HashMap<i32, Vec<i32>> = HashMap::new();
     let mut stamped: HashMap<i32, String> = HashMap::new();
+    let mut last_restamp = Instant::now() - RESTAMP_COOLDOWN;
 
     let mut sessions: Vec<Session> = Vec::new();
     let mut last_scan = Instant::now() - RESCAN_EVERY;
@@ -209,9 +215,14 @@ fn run(app: AppHandle, state: Arc<State>) {
                 }
             } else if terminal_pids.contains(&win.pid) {
                 // A terminal we know hosts sessions, but its title lost our tag
-                // (Claude Code rewrote it). Re-tag and resolve on the next tick.
-                state.restamp.store(true, Ordering::SeqCst);
-                stamped.clear();
+                // (Claude Code rewrote it). Re-tag, and hold the previous target
+                // meanwhile so the floater doesn't blink out mid-handover.
+                if last_restamp.elapsed() >= RESTAMP_COOLDOWN {
+                    last_restamp = Instant::now();
+                    state.restamp.store(true, Ordering::SeqCst);
+                    stamped.clear();
+                }
+                focused_pid = last_focused_pid;
             }
         }
         last_focused_pid = focused_pid;
@@ -225,6 +236,7 @@ fn run(app: AppHandle, state: Arc<State>) {
             ax_trusted: trusted,
             enabled: config.enabled,
             anchor_label: anchor_label(config.anchor),
+            title_conflicts: sessions.iter().filter(|s| !s.title_disabled).count(),
         };
 
         if let Ok(mut slot) = state.snapshot.lock() {
