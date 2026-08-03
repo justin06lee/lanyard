@@ -154,6 +154,26 @@ cargo run --manifest-path src-tauri/Cargo.toml --bin gru-doctor
 | `src-tauri/src/tracker.rs` | Polling loop: focus → session → floater placement |
 | `src-tauri/src/store.rs` | Persisted names and floater anchor |
 | `ui/` | Floater and sessions panel (plain HTML/CSS/JS, no build step) |
+| `assets/` | Icon artwork (SVG source of truth) |
+
+### Icons
+
+`assets/icon.svg` is the app icon, `assets/icon-small.svg` the same figure
+redrawn for 16pt and 32pt — brow, scarf stripes and tail all turn to mud below
+48px, so those sizes get their own artwork the way Apple's do.
+`assets/tray.svg` is the menu bar glyph: black on transparent, marked as a
+macOS *template* image so the system tints it to match a light or dark menu
+bar. It's rendered at 36px because tray-icon displays it at 18pt, making that
+exactly 2x on Retina.
+
+Edit the SVGs, then regenerate everything (needs `brew install librsvg`):
+
+```bash
+./scripts/build-icons.sh
+```
+
+Don't run `npx tauri icon` on its own — it downsamples one master into every
+size, which throws away the small-size artwork.
 
 The dev build is a different binary from the bundled app, so macOS treats it as
 a separate Accessibility entry — you'll be asked to grant access twice.

@@ -7,6 +7,7 @@ pub mod tracker;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{
@@ -15,6 +16,8 @@ use tauri::{
 
 use store::Config;
 use tracker::{Snapshot, State, FLOATER_H, FLOATER_W};
+
+const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
 
 #[tauri::command]
 fn get_state(state: tauri::State<'_, Arc<State>>) -> Snapshot {
@@ -132,10 +135,14 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
         ],
     )?;
 
-    let mut tray = TrayIconBuilder::with_id("gru").menu(&menu).show_menu_on_left_click(true);
-    if let Some(icon) = app.default_window_icon() {
-        tray = tray.icon(icon.clone());
-    }
+    // A template image: macOS ignores the colour and tints the alpha to suit the
+    // menu bar, so one black-on-transparent glyph reads in both light and dark.
+    // tray-icon scales it to 18pt, so 36px is exactly 2x on a Retina display.
+    let tray = TrayIconBuilder::with_id("gru")
+        .menu(&menu)
+        .icon(Image::from_bytes(TRAY_ICON)?)
+        .icon_as_template(true)
+        .show_menu_on_left_click(true);
 
     tray.on_menu_event(move |app, event| match event.id().as_ref() {
         "panel" => {
