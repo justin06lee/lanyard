@@ -207,3 +207,7 @@ without the source tree:
 /Applications/gru.app/Contents/MacOS/gru-doctor
 /Applications/gru.app/Contents/MacOS/gru-doctor 1239   # probe a specific app pid
 ```
+
+## License
+
+MIT — see [LICENSE](LICENSE).
