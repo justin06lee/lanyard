@@ -1,4 +1,4 @@
-const { describe, monogram, statusOf } = window.lanyard;
+const { describe, statusOf } = window.lanyard;
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -19,11 +19,10 @@ function buildRow(session) {
   li.className = `row${session.focused ? " is-focused" : ""}`;
 
   const status = statusOf(session);
-  const tile = document.createElement("div");
-  tile.className = `tile ${status}`;
-  tile.textContent = monogram(session.name);
-  tile.title = status;
-  li.appendChild(tile);
+  const dot = document.createElement("div");
+  dot.className = `dot ${status}`;
+  dot.title = status;
+  li.appendChild(dot);
 
   const text = document.createElement("div");
   text.className = "text";
@@ -91,6 +90,7 @@ function startEdit(text, name, session) {
 }
 
 function render(state) {
+  document.documentElement.dataset.theme = state.appearance;
   notice.hidden = state.axTrusted;
 
   setup.hidden = state.titleConflicts === 0;

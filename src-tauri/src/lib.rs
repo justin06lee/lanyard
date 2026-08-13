@@ -7,17 +7,28 @@ pub mod tracker;
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use serde::Serialize;
 use tauri::image::Image;
 use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
+use tauri::utils::config::WindowEffectsConfig;
+use tauri::utils::{WindowEffect, WindowEffectState};
 use tauri::{
-    AppHandle, LogicalPosition, Manager, WebviewUrl, WebviewWindowBuilder, WindowEvent,
+    AppHandle, LogicalPosition, LogicalSize, Manager, Theme, WebviewUrl, WebviewWindowBuilder,
+    WindowEvent,
 };
 
-use store::Config;
-use tracker::{Snapshot, State, FLOATER_H, FLOATER_W};
+use store::{Appearance, Config};
+use tracker::{Snapshot, State, PILL_DEFAULT_W, PILL_H, PILL_MAX_W, PILL_MIN_W};
 
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
+
+fn theme_of(appearance: Appearance) -> Theme {
+    match appearance {
+        Appearance::Dark => Theme::Dark,
+        Appearance::Light => Theme::Light,
+    }
+}
 
 #[tauri::command]
 fn get_state(state: tauri::State<'_, Arc<State>>) -> Snapshot {
@@ -42,14 +53,6 @@ fn rename(
 }
 
 #[tauri::command]
-fn cycle_anchor(state: tauri::State<'_, Arc<State>>) -> Result<String, String> {
-    let mut config = state.config.lock().unwrap();
-    config.anchor = config.anchor.next();
-    config.save().map_err(|e| e.to_string())?;
-    Ok(format!("{:?}", config.anchor))
-}
-
-#[tauri::command]
 fn set_enabled(enabled: bool, state: tauri::State<'_, Arc<State>>) -> Result<(), String> {
     let mut config = state.config.lock().unwrap();
     config.enabled = enabled;
@@ -61,13 +64,41 @@ fn request_accessibility() -> bool {
     ax::request_trust()
 }
 
+/// Sizes the pill to its text. The UI measures the rendered name and asks for
+/// exactly that width; the height never changes.
+#[tauri::command]
+fn resize_pill(width: f64, app: AppHandle, state: tauri::State<'_, Arc<State>>) {
+    let width = width.clamp(PILL_MIN_W, PILL_MAX_W).round();
+    {
+        let mut size = state.pill_size.lock().unwrap();
+        if (size.0 - width).abs() < 1.0 {
+            return;
+        }
+        size.0 = width;
+    }
+    let Some(floater) = app.get_webview_window("floater") else {
+        return;
+    };
+    let _ = floater.set_size(LogicalSize::new(width, PILL_H));
+    // Re-place immediately: a centre or right anchor's x depends on the width,
+    // and waiting for the next tick would read as a visible jump.
+    let win = state.last_rect.lock().unwrap().clone();
+    if let Some(win) = win {
+        let anchor = state.config.lock().unwrap().anchor;
+        let pos = tracker::placement(anchor, &win, (width, PILL_H));
+        *state.anchor_pos.lock().unwrap() = Some(pos);
+        let (dx, dy) = *state.drag_offset.lock().unwrap();
+        let _ = floater.set_position(LogicalPosition::new(pos.0 + dx, pos.1 + dy));
+    }
+}
+
 /// Displaces the floater from its anchor while the user drags it aside.
 ///
-/// The UI calls this every frame during a drag and again as it springs back to
-/// `(0, 0)` on release. Repositioning here rather than waiting for the tracker's
-/// next tick is what makes the drag feel attached to the cursor; the tracker
-/// keeps applying the same offset so the pill still follows the terminal window
-/// if it moves mid-drag.
+/// The UI calls this every frame during a drag and again as it springs to
+/// `(0, 0)` on release. Repositioning here rather than waiting for the
+/// tracker's next tick is what makes the drag feel attached to the cursor; the
+/// tracker keeps applying the same offset so the pill still follows the
+/// terminal window if it moves mid-drag.
 #[tauri::command]
 fn set_drag_offset(x: f64, y: f64, app: AppHandle, state: tauri::State<'_, Arc<State>>) {
     *state.drag_offset.lock().unwrap() = (x, y);
@@ -77,12 +108,62 @@ fn set_drag_offset(x: f64, y: f64, app: AppHandle, state: tauri::State<'_, Arc<S
     }
 }
 
-#[tauri::command]
-fn open_panel(app: AppHandle) -> Result<(), String> {
-    show_panel(&app).map_err(|e| e.to_string())
+#[derive(Serialize)]
+struct Residual {
+    x: f64,
+    y: f64,
 }
 
-fn show_panel(app: &AppHandle) -> tauri::Result<()> {
+/// Locks a released drag to whichever anchor it was thrown toward.
+///
+/// `(x, y)` is the offset at release, `(px, py)` the same offset with a little
+/// momentum projected forward — so a flick carries the pill to the corner it
+/// was aimed at, not just the nearest one. The chosen anchor is persisted, and
+/// the returned residual is the pill's current displacement from its *new*
+/// anchor, which the UI springs to zero.
+#[tauri::command]
+fn commit_drag(
+    x: f64,
+    y: f64,
+    px: f64,
+    py: f64,
+    state: tauri::State<'_, Arc<State>>,
+) -> Residual {
+    let win = state.last_rect.lock().unwrap().clone();
+    let old = *state.anchor_pos.lock().unwrap();
+    let (Some(win), Some(old)) = (win, old) else {
+        // Nothing to re-anchor against; spring back to where it came from.
+        return Residual { x, y };
+    };
+    let pill = *state.pill_size.lock().unwrap();
+    let (best, best_pos) = tracker::nearest_anchor((old.0 + px, old.1 + py), &win, pill);
+    {
+        let mut config = state.config.lock().unwrap();
+        config.anchor = best;
+        let _ = config.save();
+    }
+    *state.anchor_pos.lock().unwrap() = Some(best_pos);
+    Residual {
+        x: old.0 + x - best_pos.0,
+        y: old.1 + y - best_pos.1,
+    }
+}
+
+/// Gives the floater keyboard focus for an inline rename.
+#[tauri::command]
+fn focus_floater(app: AppHandle) {
+    if let Some(floater) = app.get_webview_window("floater") {
+        let _ = floater.set_focus();
+    }
+}
+
+#[tauri::command]
+fn open_panel(app: AppHandle, state: tauri::State<'_, Arc<State>>) -> Result<(), String> {
+    let appearance = state.config.lock().unwrap().appearance;
+    show_panel(&app, appearance).map_err(|e| e.to_string())
+}
+
+fn show_panel(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
     if let Some(panel) = app.get_webview_window("panel") {
         panel.show()?;
         panel.set_focus()?;
@@ -93,23 +174,43 @@ fn show_panel(app: &AppHandle) -> tauri::Result<()> {
         .inner_size(420.0, 520.0)
         .min_inner_size(360.0, 240.0)
         .resizable(true)
+        .transparent(true)
+        .theme(Some(theme_of(appearance)))
+        .effects(WindowEffectsConfig {
+            effects: vec![WindowEffect::Sidebar],
+            state: Some(WindowEffectState::Active),
+            radius: None,
+            color: None,
+        })
         .build()?;
     panel.set_visible_on_all_workspaces(true)?;
     Ok(())
 }
 
-fn build_floater(app: &AppHandle) -> tauri::Result<()> {
+fn build_floater(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
     let floater = WebviewWindowBuilder::new(app, "floater", WebviewUrl::App("index.html".into()))
         .title("Lanyard")
-        .inner_size(FLOATER_W, FLOATER_H)
+        .inner_size(PILL_DEFAULT_W, PILL_H)
         .decorations(false)
         .transparent(true)
         .always_on_top(true)
         .skip_taskbar(true)
         .resizable(false)
-        .shadow(false)
+        .shadow(true)
         .focused(false)
         .visible(false)
+        // Dragging must work from the first click, without focusing the pill.
+        .accept_first_mouse(true)
+        .theme(Some(theme_of(appearance)))
+        // The shell layer of the glass: a real NSVisualEffectView blurring
+        // whatever sits behind the window, rounded into a capsule. `Active`
+        // keeps it lively even though the pill is almost never the key window.
+        .effects(WindowEffectsConfig {
+            effects: vec![WindowEffect::Popover],
+            state: Some(WindowEffectState::Active),
+            radius: Some(PILL_H / 2.0),
+            color: None,
+        })
         .build()?;
     // The whole point: one floater that follows you across every Space.
     floater.set_visible_on_all_workspaces(true)?;
@@ -119,21 +220,10 @@ fn build_floater(app: &AppHandle) -> tauri::Result<()> {
 fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
     let panel_item = MenuItem::with_id(app, "panel", "Sessions…", true, None::<&str>)?;
     let toggle_item = MenuItem::with_id(app, "toggle", "Toggle floater", true, None::<&str>)?;
-    let anchor_item = MenuItem::with_id(app, "anchor", "Move floater", true, None::<&str>)?;
     let ax_item = MenuItem::with_id(app, "ax", "Accessibility access…", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Lanyard", true, None::<&str>)?;
-    let menu = Menu::with_items(
-        app,
-        &[
-            &panel_item,
-            &toggle_item,
-            &anchor_item,
-            &sep,
-            &ax_item,
-            &quit_item,
-        ],
-    )?;
+    let menu = Menu::with_items(app, &[&panel_item, &toggle_item, &sep, &ax_item, &quit_item])?;
 
     // A template image: macOS ignores the colour and tints the alpha to suit the
     // menu bar, so one black-on-transparent glyph reads in both light and dark.
@@ -146,16 +236,12 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
 
     tray.on_menu_event(move |app, event| match event.id().as_ref() {
         "panel" => {
-            let _ = show_panel(app);
+            let appearance = state.config.lock().unwrap().appearance;
+            let _ = show_panel(app, appearance);
         }
         "toggle" => {
             let mut config = state.config.lock().unwrap();
             config.enabled = !config.enabled;
-            let _ = config.save();
-        }
-        "anchor" => {
-            let mut config = state.config.lock().unwrap();
-            config.anchor = config.anchor.next();
             let _ = config.save();
         }
         "ax" => {
@@ -178,10 +264,12 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             get_state,
             rename,
-            cycle_anchor,
             set_enabled,
             request_accessibility,
+            resize_pill,
             set_drag_offset,
+            commit_drag,
+            focus_floater,
             open_panel
         ])
         .setup(move |app| {
@@ -189,8 +277,9 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
+            let appearance = state.config.lock().unwrap().appearance;
             let handle = app.handle().clone();
-            build_floater(&handle)?;
+            build_floater(&handle, appearance)?;
             build_tray(&handle, state.clone())?;
 
             if !ax::is_trusted() {

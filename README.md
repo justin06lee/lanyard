@@ -8,24 +8,25 @@ always-on-top pill over the focused terminal telling you *which* session it is,
 named after its repository and renameable to whatever you like.
 
 ```
-   ╭─────────────────────────────────────────────────╮
-   │  ┌───┐  hikmah.chat                             │
-   │  │ H │  Analyze codebase and provide status…    │
-   │  └───┘                                          │
-   ╰─────────────────────────────────────────────────╯
+                ╭──────────────────╮
+                │   hikmah.chat    │
+                ╰──────────────────╯
 ```
+
+The pill is deliberately tiny: just the name, set in glass. It's a real
+NSVisualEffectView capsule — liquid glass blurring whatever sits behind it —
+dark by default, light by configuration, and exactly as wide as its text.
 
 - **Follows you across Desktops.** One floater, pinned to every Space.
 - **Follows focus within a Desktop.** Switch between two terminals on the same
   screen and the tag updates.
 - **Names itself from the repo**, and remembers renames per session *and* per
   directory, so tomorrow's session in the same checkout keeps the name.
-- **The second line is Claude's own summary** of what that session is doing,
-  read from the `ai-title` entries in its transcript. Sessions that haven't
-  generated one yet fall back to the repo path.
-- **Live status** on the monogram tile, in system colours: grey when idle, blue
-  (gently breathing) while Claude works, orange when it's blocked waiting on you.
-- **Drag it aside** when it covers something; it springs back on release.
+- **Throw it where you want it.** Drag needs no click-to-focus first, and
+  wherever you release — or flick — the pill, it locks to the nearest corner
+  and remembers.
+- Everything else — Claude's own one-line summary of each session, live
+  busy/idle/waiting status — lives in the Sessions panel, one tray click away.
 
 ---
 
@@ -58,17 +59,17 @@ Claude Code sessions afterwards.
 
 | Action | How |
 | --- | --- |
-| Rename the focused session | Double-click the name on the floater |
+| Rename the focused session | Double-click the name on the pill |
 | Reset to the repo name | Rename it to an empty string |
-| Peek under the floater | Drag it aside; it rubber-bands back when you let go |
-| Move the floater for good | Click ⤡ on the pill, or tray › *Move floater* — cycles the six positions |
+| Move the pill | Drag or flick it — it locks to the nearest of six positions and remembers |
 | See every session | Tray › *Sessions…* |
-| Hide/show the floater | Tray › *Toggle floater* |
+| Hide/show the pill | Tray › *Toggle floater* |
 
-The floater only appears when a Claude Code session has focus. Switch to your
+The pill only appears when a Claude Code session has focus. Switch to your
 browser and it gets out of the way.
 
-Settings live in `~/.config/lanyard/config.json`.
+Settings live in `~/.config/lanyard/config.json`; set `"appearance": "light"`
+there for light glass (the default is `"dark"`).
 
 ---
 

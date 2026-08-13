@@ -1,43 +1,50 @@
-const { describe, monogram, statusOf } = window.lanyard;
-
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
-const card = document.getElementById("card");
-const tile = document.getElementById("tile");
-const text = document.getElementById("text");
+const pill = document.getElementById("pill");
 const name = document.getElementById("name");
-const desc = document.getElementById("desc");
 const rename = document.getElementById("rename");
-const anchor = document.getElementById("anchor");
+const measure = document.getElementById("measure");
+
+/* Must match .pill's horizontal padding in style.css. */
+const PAD = 14;
 
 let current = null;
 let editing = false;
 let shownId = null;
+let requestedWidth = 0;
 
 /* ------------------------------------------------------------------ render */
 
+/* The pill is text-sized: measure the rendered name and ask the window to be
+   exactly that wide. Rust clamps to sane bounds; past the cap, CSS ellipsis
+   takes over. */
+function fit(text) {
+  measure.textContent = text;
+  const width = Math.ceil(measure.getBoundingClientRect().width) + PAD * 2;
+  if (width !== requestedWidth) {
+    requestedWidth = width;
+    invoke("resize_pill", { width }).catch(() => {});
+  }
+}
+
 function render(state) {
+  document.documentElement.dataset.theme = state.appearance;
   const session = state.focused;
   if (!session) return;
   current = session;
 
-  const status = statusOf(session);
-  tile.className = `tile ${status}`;
-  tile.title = status;
-
   if (editing) return;
 
-  tile.textContent = monogram(session.name);
   name.textContent = session.name;
-  desc.textContent = describe(session);
+  fit(session.name);
 
-  // Crossfade only when the session actually changed, not on every status tick.
+  // Crossfade only when the session actually changed, not on every tick.
   if (session.sessionId !== shownId) {
     shownId = session.sessionId;
-    text.classList.remove("swap");
-    void text.offsetWidth; // reflow, so the animation restarts
-    text.classList.add("swap");
+    name.classList.remove("swap");
+    void name.offsetWidth; // reflow, so the animation restarts
+    name.classList.add("swap");
   }
 }
 
@@ -46,6 +53,9 @@ function render(state) {
 function beginEdit() {
   if (!current || editing) return;
   editing = true;
+  // The pill normally never takes focus (accept_first_mouse delivers clicks
+  // without it), so typing needs the window focused explicitly.
+  invoke("focus_floater").catch(() => {});
   rename.value = current.name;
   rename.hidden = false;
   name.hidden = true;
@@ -70,9 +80,6 @@ function endEdit(commit) {
 }
 
 name.addEventListener("dblclick", beginEdit);
-name.addEventListener("keydown", (e) => {
-  if (e.key === "Enter" || e.key === "F2") beginEdit();
-});
 
 rename.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
@@ -85,13 +92,12 @@ rename.addEventListener("keydown", (e) => {
 });
 rename.addEventListener("blur", () => endEdit(false));
 
-anchor.addEventListener("click", () => invoke("cycle_anchor").catch(() => {}));
-
-/* -------------------------------------------------- drag, then rubber-band */
+/* --------------------------------------------------- drag, throw, and lock */
 
 // Displacement from the anchored position. The Rust side adds this to wherever
-// the floater is anchored, so the card keeps tracking the terminal window even
-// while it is being held aside.
+// the pill is anchored, so the pill keeps tracking the terminal window even
+// while it is being held aside. On release the throw's momentum picks the new
+// anchor (commit_drag) and the spring carries the pill into it.
 let offX = 0;
 let offY = 0;
 let velX = 0;
@@ -104,6 +110,7 @@ let startY = 0;
 let baseX = 0;
 let baseY = 0;
 let frame = 0;
+let lastMoveT = 0;
 
 // Underdamped: critical damping for k=220 is ~29.7, so 24 gives a little
 // overshoot — the rubber-band snap, without the wobble of a bouncier spring.
@@ -111,6 +118,7 @@ const STIFFNESS = 220;
 const DAMPING = 24;
 const THRESHOLD = 3; // px of travel before a click becomes a drag
 const MAX_STEP = 1 / 30; // clamp dt so a stalled frame can't explode the spring
+const MOMENTUM = 0.14; // seconds of release velocity projected into the throw
 
 function push() {
   invoke("set_drag_offset", { x: offX, y: offY }).catch(() => {});
@@ -152,15 +160,15 @@ function settle(now) {
   frame = requestAnimationFrame(settle);
 }
 
-function springBack() {
+function springTo() {
   if (frame) cancelAnimationFrame(frame);
   settle.last = performance.now();
   frame = requestAnimationFrame(settle);
 }
 
-card.addEventListener("pointerdown", (e) => {
+pill.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || editing) return;
-  if (e.target === rename || e.target === anchor) return;
+  if (e.target === rename) return;
 
   // Grabbing mid-flight takes over from the spring rather than fighting it.
   if (frame) {
@@ -175,10 +183,11 @@ card.addEventListener("pointerdown", (e) => {
   startY = e.screenY;
   baseX = offX;
   baseY = offY;
-  card.setPointerCapture(e.pointerId);
+  lastMoveT = e.timeStamp;
+  pill.setPointerCapture(e.pointerId);
 });
 
-card.addEventListener("pointermove", (e) => {
+pill.addEventListener("pointermove", (e) => {
   if (!armed) return;
 
   // Screen coordinates, not client: the window moves with the cursor, so the
@@ -189,26 +198,52 @@ card.addEventListener("pointermove", (e) => {
   if (!dragging) {
     if (Math.abs(dx) < THRESHOLD && Math.abs(dy) < THRESHOLD) return;
     dragging = true;
-    card.classList.add("dragging");
+    pill.classList.add("dragging");
   }
 
-  offX = baseX + dx;
-  offY = baseY + dy;
+  const nx = baseX + dx;
+  const ny = baseY + dy;
+
+  // Track release velocity for the throw, smoothed against pointer jitter.
+  const dt = (e.timeStamp - lastMoveT) / 1000;
+  if (dt > 0 && dt < 0.1) {
+    velX = velX * 0.2 + ((nx - offX) / dt) * 0.8;
+    velY = velY * 0.2 + ((ny - offY) / dt) * 0.8;
+  }
+  lastMoveT = e.timeStamp;
+
+  offX = nx;
+  offY = ny;
   schedulePush();
 });
 
 function endDrag(e) {
   if (!armed) return;
   armed = false;
-  if (card.hasPointerCapture(e.pointerId)) card.releasePointerCapture(e.pointerId);
+  if (pill.hasPointerCapture(e.pointerId)) pill.releasePointerCapture(e.pointerId);
   if (!dragging) return; // it was a click, not a drag
   dragging = false;
-  card.classList.remove("dragging");
-  springBack();
+  pill.classList.remove("dragging");
+
+  // Where the pill lands decides where it locks: Rust picks the anchor
+  // nearest the throw's projected end point and answers with the pill's
+  // displacement from that new anchor, which the spring then closes.
+  invoke("commit_drag", {
+    x: offX,
+    y: offY,
+    px: offX + velX * MOMENTUM,
+    py: offY + velY * MOMENTUM,
+  })
+    .then((residual) => {
+      offX = residual.x;
+      offY = residual.y;
+      springTo();
+    })
+    .catch(springTo);
 }
 
-card.addEventListener("pointerup", endDrag);
-card.addEventListener("pointercancel", endDrag);
+pill.addEventListener("pointerup", endDrag);
+pill.addEventListener("pointercancel", endDrag);
 
 /* ------------------------------------------------------------------ wiring */
 
