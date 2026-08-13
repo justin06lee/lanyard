@@ -1,4 +1,4 @@
-const { describe, monogram, statusOf } = window.gru;
+const { describe, monogram, statusOf } = window.lanyard;
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -212,5 +212,5 @@ card.addEventListener("pointercancel", endDrag);
 
 /* ------------------------------------------------------------------ wiring */
 
-listen("gru://state", (event) => render(event.payload));
+listen("lanyard://state", (event) => render(event.payload));
 invoke("get_state").then(render).catch(() => {});

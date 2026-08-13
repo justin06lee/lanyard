@@ -1133,19 +1133,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "gru"
-version = "0.1.0"
-dependencies = [
- "accessibility-sys",
- "core-foundation",
- "libc",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
-]
-
-[[package]]
 name = "gtk"
 version = "0.18.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1628,6 +1615,19 @@ dependencies = [
  "bitflags 2.13.1",
  "serde",
  "unicode-segmentation",
+]
+
+[[package]]
+name = "lanyard"
+version = "0.1.0"
+dependencies = [
+ "accessibility-sys",
+ "core-foundation",
+ "libc",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-build",
 ]
 
 [[package]]

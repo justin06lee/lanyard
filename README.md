@@ -1,9 +1,9 @@
-# gru
+# Lanyard
 
 A floating name tag for whichever Claude Code session you're currently looking at.
 
 When you run a dozen Claude Code sessions across a dozen Desktops, every window
-looks identical — Claude Code titles them all `✳ Claude Code`. gru puts a small
+looks identical — Claude Code titles them all `✳ Claude Code`. Lanyard puts a small
 always-on-top pill over the focused terminal telling you *which* session it is,
 named after its repository and renameable to whatever you like.
 
@@ -35,17 +35,17 @@ Requires Rust and Node.
 
 ```bash
 npm install
-npm run build          # produces src-tauri/target/release/bundle/macos/gru.app
-cp -r src-tauri/target/release/bundle/macos/gru.app /Applications/
+npm run build          # produces src-tauri/target/release/bundle/macos/Lanyard.app
+cp -r src-tauri/target/release/bundle/macos/Lanyard.app /Applications/
 ./scripts/setup-shell.sh
 ```
 
-Then launch gru from /Applications. It lives in the menu bar — there is no Dock
+Then launch Lanyard from /Applications. It lives in the menu bar — there is no Dock
 icon.
 
-On first launch macOS will ask for **Accessibility** access. gru needs it to see
+On first launch macOS will ask for **Accessibility** access. Lanyard needs it to see
 which window has focus; without it the floater stays hidden. If you miss the
-prompt: System Settings › Privacy & Security › Accessibility, then add gru. The
+prompt: System Settings › Privacy & Security › Accessibility, then add Lanyard. The
 tray menu's *Accessibility access…* item reopens the prompt.
 
 `setup-shell.sh` appends `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to your shell
@@ -68,24 +68,24 @@ Claude Code sessions afterwards.
 The floater only appears when a Claude Code session has focus. Switch to your
 browser and it gets out of the way.
 
-Settings live in `~/.config/gru/config.json`.
+Settings live in `~/.config/lanyard/config.json`.
 
 ---
 
 ## How it works
 
 Claude Code already keeps a registry at `~/.claude/sessions/<pid>.json` with each
-session's id, working directory, a derived name and a live busy/idle status. gru
+session's id, working directory, a derived name and a live busy/idle status. Lanyard
 reads it rather than inventing its own tracking, and supplies the two things it
 lacks: a link from session to *window*, and somewhere to display it.
 
 **Identity travels in the terminal title.** This is the only channel that works
 for terminals like Alacritty, where every window belongs to one shared process —
-so process ancestry can't tell windows apart. gru writes an OSC-0 title to each
+so process ancestry can't tell windows apart. Lanyard writes an OSC-0 title to each
 session's tty carrying a machine-readable token:
 
 ```
-hikmah.chat ⟦gru:6202⟧
+hikmah.chat ⟦lanyard:6202⟧
 ```
 
 **Focus resolution uses the macOS Accessibility API** to read the focused
@@ -94,7 +94,7 @@ Space, which is exactly right here: whatever it can see is what you're looking
 at. The floater is marked `visibleOnAllWorkspaces`, so a single window follows
 you across every Desktop instead of one per Space.
 
-gru asks each *terminal app hosting a session* whether it is `AXFrontmost`,
+Lanyard asks each *terminal app hosting a session* whether it is `AXFrontmost`,
 rather than asking the system for its focused application. The system-wide
 `AXFocusedApplication` query returns `kAXErrorCannotComplete` (-25204) on macOS
 26 even with Accessibility fully granted, while per-application queries work
@@ -104,13 +104,13 @@ you're in a browser, no candidate matches and the floater hides itself.
 ### Why `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
 
 Claude Code rewrites the terminal title as it works — `✳ Claude Code` at rest,
-then a summary of the current task. Since gru uses the title as its identity
-channel, the two overwrite each other every few seconds. gru copes (it notices
+then a summary of the current task. Since Lanyard uses the title as its identity
+channel, the two overwrite each other every few seconds. Lanyard copes (it notices
 an untagged title and re-stamps, throttled to once per 750 ms) but the title
 visibly flickers in Mission Control.
 
 Setting `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` stops Claude Code touching the
-title, leaving gru in sole possession. The Sessions panel tells you how many
+title, leaving Lanyard in sole possession. The Sessions panel tells you how many
 running sessions still need this.
 
 This is invisible in normal use: Alacritty's `decorations = "Buttonless"` hides
@@ -127,7 +127,7 @@ only OSC title support and AX-visible windows — so Terminal.app, WezTerm, kitt
 and Ghostty should work.
 
 One caveat for **tabbed** terminals (iTerm2, Terminal.app, WezTerm): macOS
-exposes a tabbed window as a single AX window, so gru resolves the tab that owns
+exposes a tabbed window as a single AX window, so Lanyard resolves the tab that owns
 the title, which is the foreground one. Split panes within a single tab can't be
 distinguished. Alacritty's one-window-per-session model has no such ambiguity.
 
@@ -142,8 +142,8 @@ Window ids are read from whichever of `ALACRITTY_WINDOW_ID`, `KITTY_WINDOW_ID`,
 npm run dev                          # hot-reloading dev build
 cargo test --manifest-path src-tauri/Cargo.toml
 
-# Print exactly what gru sees — sessions, terminal apps, focus resolution.
-cargo run --manifest-path src-tauri/Cargo.toml --bin gru-doctor
+# Print exactly what Lanyard sees — sessions, terminal apps, focus resolution.
+cargo run --manifest-path src-tauri/Cargo.toml --bin lanyard-doctor
 ```
 
 | Path | Purpose |
@@ -180,32 +180,32 @@ a separate Accessibility entry — you'll be asked to grant access twice.
 
 The app is unsigned, and macOS keys Accessibility grants to a binary's code
 hash, so **every rebuild needs re-approving**. If the floater stops appearing
-after `npm run build`, remove the stale gru entry in System Settings › Privacy
+after `npm run build`, remove the stale Lanyard entry in System Settings › Privacy
 & Security › Accessibility and add the new one.
 
 ---
 
 ## Troubleshooting
 
-Run `gru-doctor` first — it answers most of these directly.
+Run `lanyard-doctor` first — it answers most of these directly.
 
 **The floater never appears.** Check Accessibility access is granted to the
 binary you're actually running. Tray › *Sessions…* shows a banner when it isn't.
-`gru-doctor` prints `accessibility : granted` when it's in order.
+`lanyard-doctor` prints `accessibility : granted` when it's in order.
 
 **It shows the wrong session, or lags a moment behind.** Almost always the title
 tug-of-war — run `./scripts/setup-shell.sh` and restart those sessions.
 
-**A session is missing from the panel.** gru lists interactive sessions with a
+**A session is missing from the panel.** Lanyard lists interactive sessions with a
 live pid and a controlling tty; background agents (`--bg`) are excluded by
 design.
 
-`gru-doctor` ships inside the bundle too, so an installed copy can be checked
+`lanyard-doctor` ships inside the bundle too, so an installed copy can be checked
 without the source tree:
 
 ```bash
-/Applications/gru.app/Contents/MacOS/gru-doctor
-/Applications/gru.app/Contents/MacOS/gru-doctor 1239   # probe a specific app pid
+/Applications/Lanyard.app/Contents/MacOS/lanyard-doctor
+/Applications/Lanyard.app/Contents/MacOS/lanyard-doctor 1239   # probe a specific app pid
 ```
 
 ## License

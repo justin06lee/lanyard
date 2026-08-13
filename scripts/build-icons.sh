@@ -14,7 +14,7 @@ command -v rsvg-convert >/dev/null || {
 }
 
 icons=src-tauri/icons
-iconset=$(mktemp -d)/gru.iconset
+iconset=$(mktemp -d)/lanyard.iconset
 mkdir -p "$iconset"
 
 render() { rsvg-convert -w "$2" -h "$2" "$1" -o "$3"; }

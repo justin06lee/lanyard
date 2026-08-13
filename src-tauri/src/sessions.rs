@@ -22,7 +22,7 @@ pub struct Session {
     pub repo: String,
     /// Path of `cwd` relative to the repo root ("" when at the root).
     pub subpath: String,
-    /// The name Claude Code derived for itself, e.g. `gru-9d`.
+    /// The name Claude Code derived for itself, e.g. `myrepo-9d`.
     pub claude_name: Option<String>,
     /// `busy` / `idle` — whatever Claude Code last wrote.
     pub status: Option<String>,
@@ -31,7 +31,7 @@ pub struct Session {
     /// Terminal window id from the environment (Alacritty, kitty, WezTerm, …).
     pub window_id: Option<String>,
     /// True when this session was launched with CLAUDE_CODE_DISABLE_TERMINAL_TITLE
-    /// set, meaning gru owns the window title outright instead of contesting it.
+    /// set, meaning Lanyard owns the window title outright instead of contesting it.
     pub title_disabled: bool,
     /// Claude Code's own one-line summary of what this session is doing, lifted
     /// from the `ai-title` entries in its transcript.
@@ -39,7 +39,7 @@ pub struct Session {
     pub started_at: Option<i64>,
 }
 
-/// The slice of a session's environment gru cares about. Immutable for the
+/// The slice of a session's environment Lanyard cares about. Immutable for the
 /// lifetime of the process, so it is read once and cached.
 #[derive(Debug, Clone, Default)]
 pub struct ProcEnv {
