@@ -158,13 +158,15 @@ cargo run --manifest-path src-tauri/Cargo.toml --bin lanyard-doctor
 
 ### Icons
 
-`assets/icon.svg` is the app icon, `assets/icon-small.svg` the same figure
-redrawn for 16pt and 32pt — brow, scarf stripes and tail all turn to mud below
-48px, so those sizes get their own artwork the way Apple's do.
+`assets/icon.svg` is the app icon — a badge on a cord, the pill the app draws
+on screen hanging from its lanyard. `assets/icon-small.svg` is the same figure
+redrawn for 16pt and 32pt: the clip ring and badge line turn to mud below
+48px, so those sizes reduce to cord and pill the way Apple's small sizes do.
 `assets/tray.svg` is the menu bar glyph: black on transparent, marked as a
 macOS *template* image so the system tints it to match a light or dark menu
-bar. It's rendered at 36px because tray-icon displays it at 18pt, making that
-exactly 2x on Retina.
+bar. `assets/tray-alert.svg` is the same glyph with a badge dot, shown while a
+session is blocked waiting on you. They're rendered at 36px because tray-icon
+displays them at 18pt, making that exactly 2x on Retina.
 
 Edit the SVGs, then regenerate everything (needs `brew install librsvg`):
 

@@ -1,9 +1,11 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="360" height="360" viewBox="0 0 360 360">
-  <!-- Menu bar template glyph: pure black on transparency, macOS tints it. -->
+  <!-- The tray glyph with a badge dot: shown while a session is blocked
+       waiting on the user. Same template treatment as tray.svg. -->
   <g fill="none" stroke="#000000" stroke-width="34" stroke-linecap="round">
     <path d="M 104 22 C 108 78, 136 120, 168 152"/>
     <path d="M 256 22 C 252 78, 224 120, 192 152"/>
   </g>
   <circle cx="180" cy="176" r="20" fill="none" stroke="#000000" stroke-width="18"/>
   <rect x="64" y="216" width="232" height="94" rx="47" fill="#000000"/>
+  <circle cx="310" cy="54" r="44" fill="#000000"/>
 </svg>
