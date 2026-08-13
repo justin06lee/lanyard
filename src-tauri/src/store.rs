@@ -22,16 +22,27 @@ pub enum Anchor {
 }
 
 impl Anchor {
-    pub fn next(self) -> Self {
-        match self {
-            Anchor::TopCenter => Anchor::TopRight,
-            Anchor::TopRight => Anchor::BottomRight,
-            Anchor::BottomRight => Anchor::BottomCenter,
-            Anchor::BottomCenter => Anchor::BottomLeft,
-            Anchor::BottomLeft => Anchor::TopLeft,
-            Anchor::TopLeft => Anchor::TopCenter,
-        }
-    }
+    /// Every position the pill can lock to; drag-and-release picks the nearest.
+    pub const ALL: [Anchor; 6] = [
+        Anchor::TopCenter,
+        Anchor::TopLeft,
+        Anchor::TopRight,
+        Anchor::BottomCenter,
+        Anchor::BottomLeft,
+        Anchor::BottomRight,
+    ];
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum Appearance {
+    Dark,
+    Light,
+}
+
+/// Dark glass by default; light is the configurable exception.
+fn default_appearance() -> Appearance {
+    Appearance::Dark
 }
 
 /// Top-right by default: Claude Code's TUI is left-aligned with a wide right
@@ -61,6 +72,8 @@ pub struct Config {
     /// be turned off if another tool owns the title.
     #[serde(default = "default_true")]
     pub stamp_titles: bool,
+    #[serde(default = "default_appearance")]
+    pub appearance: Appearance,
 }
 
 impl Default for Config {
@@ -71,6 +84,7 @@ impl Default for Config {
             anchor: default_anchor(),
             enabled: true,
             stamp_titles: true,
+            appearance: default_appearance(),
         }
     }
 }
@@ -157,12 +171,4 @@ mod tests {
         assert_eq!(c.name_for("s1", "/tmp/a", "myrepo"), "myrepo");
     }
 
-    #[test]
-    fn anchor_cycle_returns_to_start() {
-        let mut a = Anchor::TopCenter;
-        for _ in 0..6 {
-            a = a.next();
-        }
-        assert_eq!(a, Anchor::TopCenter);
-    }
 }

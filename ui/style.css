@@ -1,25 +1,66 @@
-/* Design tokens follow Apple's Human Interface guidance: SF text styles, the
-   standard label/secondary-label opacities, and system accent colours. */
+/* Liquid glass, three layers deep:
+     shell — the window itself, an NSVisualEffectView blurring whatever is
+             behind it (set up in Rust; CSS only sees a transparent body);
+     plate — the tint, hairline border, top highlight and soft inner well
+             painted here, giving the glass its thickness;
+     content — high-contrast text sitting on top.
+   Dark is the default; `html[data-theme="light"]` swaps the tokens. */
 :root {
   --sf:
     -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display",
     system-ui, sans-serif;
   --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
 
-  --label: rgba(0, 0, 0, 0.85);
-  --secondary: rgba(60, 60, 67, 0.6);
-  --tertiary: rgba(60, 60, 67, 0.3);
-  --separator: rgba(0, 0, 0, 0.07);
+  --label: rgba(255, 255, 255, 0.98);
+  --secondary: rgba(235, 235, 245, 0.62);
+  --tertiary: rgba(235, 235, 245, 0.32);
+  --separator: rgba(255, 255, 255, 0.07);
 
-  --surface: #ffffff;
-  --canvas: #f2f2f7;
+  /* plate */
+  --plate: rgba(18, 19, 24, 0.3);
+  --plate-opaque: rgba(28, 29, 35, 0.97);
+  --edge: rgba(255, 255, 255, 0.12);
+  --edge-top: rgba(255, 255, 255, 0.22);
+  --well: rgba(0, 0, 0, 0.5);
+  --text-glow: 0 1px 2px rgba(0, 0, 0, 0.35);
 
-  --blue: #007aff;
-  --orange: #ff9500;
-  --grey: #8e8e93;
+  /* panel */
+  --wash: rgba(15, 16, 20, 0.42);
+  --card: rgba(255, 255, 255, 0.06);
+  --card-edge: rgba(255, 255, 255, 0.09);
+  --input-well: rgba(0, 0, 0, 0.28);
+  --focus-tint: rgba(10, 132, 255, 0.16);
+
+  --accent: #0a84ff;
+  --orange: #ff9f0a;
+  --grey: #98989d;
 
   /* Apple's standard ease for UI motion: quick out, gentle settle. */
   --ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+html[data-theme="light"] {
+  --label: rgba(0, 0, 0, 0.88);
+  --secondary: rgba(60, 60, 67, 0.6);
+  --tertiary: rgba(60, 60, 67, 0.3);
+  --separator: rgba(0, 0, 0, 0.06);
+
+  --plate: rgba(255, 255, 255, 0.38);
+  --plate-opaque: rgba(246, 246, 249, 0.97);
+  --edge: rgba(255, 255, 255, 0.6);
+  --edge-top: rgba(255, 255, 255, 0.9);
+  --well: rgba(0, 0, 0, 0.12);
+  --text-glow: none;
+
+  --wash: rgba(242, 242, 247, 0.45);
+  --card: rgba(255, 255, 255, 0.55);
+  --card-edge: rgba(0, 0, 0, 0.06);
+  --input-well: rgba(0, 0, 0, 0.05);
+  --focus-tint: rgba(0, 122, 255, 0.1);
+
+  --accent: #007aff;
+  --orange: #ff9500;
+  --grey: #8e8e93;
 }
 
 * {
@@ -30,8 +71,6 @@
 
 html,
 body {
-  /* Without this, percentage heights inside resolve against auto and the card
-     collapses to its text height. */
   height: 100%;
 }
 
@@ -46,153 +85,69 @@ body {
 
 /* ============================ floater ============================ */
 
-/* The window is transparent so the card can own its corner radius and shadow.
-   The card itself is fully opaque. Padding leaves room for the shadow and for
-   the lift-on-drag scale. */
+/* The window is the pill: its vibrancy view is rounded to a capsule in Rust,
+   so the plate here must hug the same radius. */
 body.floater {
   background: transparent;
   overflow: hidden;
-  padding: 8px;
 }
 
-.card {
+.pill {
   display: flex;
   align-items: center;
-  gap: 11px;
+  justify-content: center;
   height: 100%;
-  padding: 0 10px 0 13px;
+  padding: 0 14px;
   border-radius: 15px;
-  background: var(--surface);
+  background: var(--plate);
   box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.06),
-    0 2px 5px rgba(0, 0, 0, 0.06),
-    0 12px 30px rgba(0, 0, 0, 0.17);
+    inset 0 0 0 1px var(--edge),
+    inset 0 1px 0 var(--edge-top),
+    inset 0 -8px 14px -10px var(--well);
   cursor: grab;
-  transform: translateZ(0);
-  transition:
-    box-shadow 260ms var(--ease),
-    transform 260ms var(--ease);
+  transition: box-shadow 180ms var(--ease);
 }
 
-.card.dragging {
+.pill.dragging {
   cursor: grabbing;
-  transform: scale(1.018);
   box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.06),
-    0 4px 10px rgba(0, 0, 0, 0.09),
-    0 22px 50px rgba(0, 0, 0, 0.26);
-  will-change: transform;
-  transition:
-    box-shadow 180ms var(--ease),
-    transform 180ms var(--ease);
+    inset 0 0 0 1px var(--edge-top),
+    inset 0 1px 0 var(--edge-top),
+    inset 0 -8px 14px -10px var(--well);
 }
 
-/* Entrance settles in rather than popping. `backwards`, never `forwards` — a
-   forwards fill would pin `transform` and defeat `.dragging`'s scale. */
-body.floater .card {
-  animation: settle 260ms var(--ease) backwards;
-}
-
-@keyframes settle {
-  from {
-    opacity: 0;
-    transform: translateY(-8px) scale(0.97);
-  }
-}
-
-/* ---- leading tile: a monogram, tinted by what the session is doing ---- */
-
-.tile {
-  position: relative;
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 36px;
-  height: 36px;
-  border-radius: 10px;
-  background: var(--grey);
-  color: #fff;
-  font-size: 16px;
+.pill .name {
+  max-width: 100%;
+  font-size: 13px;
   font-weight: 600;
   line-height: 1;
-  letter-spacing: -0.02em;
-  transition: background 420ms var(--ease);
-}
-
-.tile::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  /* A hint of top-down gloss, the way an app icon catches light. */
-  background: linear-gradient(
-    180deg,
-    rgba(255, 255, 255, 0.22),
-    rgba(255, 255, 255, 0)
-  );
-  pointer-events: none;
-}
-
-.tile.busy {
-  background: var(--blue);
-  animation: breathe 2.4s ease-in-out infinite;
-}
-
-.tile.waiting {
-  background: var(--orange);
-}
-
-@keyframes breathe {
-  50% {
-    opacity: 0.62;
-  }
-}
-
-/* ---- text ---- */
-
-.text {
-  flex: 1;
-  min-width: 0;
-}
-
-.name {
-  font-size: 15px;
-  font-weight: 600;
-  line-height: 19px;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.01em;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  text-shadow: var(--text-glow);
   outline: none;
 }
 
-.name:focus-visible {
-  text-decoration: underline dotted var(--blue);
-  text-underline-offset: 3px;
+/* Switching sessions crossfades the label instead of snapping it. */
+.pill .name.swap {
+  animation: swap 220ms var(--ease) backwards;
 }
 
-.desc {
-  font-size: 12px;
-  font-weight: 400;
-  line-height: 16px;
-  letter-spacing: -0.004em;
-  color: var(--secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.desc:empty {
-  display: none;
+@keyframes swap {
+  from {
+    opacity: 0;
+    transform: translateY(3px);
+  }
 }
 
 .rename {
   width: 100%;
   font-family: inherit;
-  font-size: 15px;
+  font-size: 13px;
   font-weight: 600;
-  line-height: 19px;
-  letter-spacing: -0.012em;
+  letter-spacing: -0.01em;
+  text-align: center;
   color: var(--label);
   background: transparent;
   border: none;
@@ -200,74 +155,25 @@ body.floater .card {
   padding: 0;
   user-select: text;
   cursor: text;
-  caret-color: var(--blue);
+  caret-color: var(--accent);
 }
 
-/* Switching sessions crossfades the label instead of snapping it. */
-.text.swap {
-  animation: swap 260ms var(--ease) backwards;
-}
-
-@keyframes swap {
-  from {
-    opacity: 0;
-    transform: translateY(5px);
-  }
-}
-
-/* ---- trailing affordance, revealed on hover ---- */
-
-.ghost {
-  flex: none;
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 7px;
-  background: transparent;
-  color: var(--secondary);
-  font-family: inherit;
+/* Off-screen twin of .name used to measure the pill's natural width. */
+.measure {
+  position: absolute;
+  top: -100px;
+  left: 0;
   font-size: 13px;
-  cursor: pointer;
-  opacity: 0;
-  transition:
-    opacity 200ms var(--ease),
-    background 200ms var(--ease),
-    color 200ms var(--ease);
-}
-
-.card:hover .ghost {
-  opacity: 1;
-}
-
-.ghost:hover {
-  color: var(--label);
-  background: rgba(0, 0, 0, 0.05);
-}
-
-.ghost:active {
-  background: rgba(0, 0, 0, 0.09);
-}
-
-@media (prefers-reduced-motion: reduce) {
-  body.floater .card,
-  .text.swap,
-  .tile.busy {
-    animation: none;
-  }
-  .card,
-  .card.dragging,
-  .tile,
-  .ghost {
-    transition: none;
-  }
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  visibility: hidden;
 }
 
 /* ============================= panel ============================= */
 
 body.panel {
-  background: var(--canvas);
+  background: var(--wash);
   padding: 16px;
   overflow-y: auto;
 }
@@ -281,7 +187,7 @@ body.panel {
 }
 
 .panel-head h1 {
-  font-size: 19px;
+  font-size: 17px;
   font-weight: 700;
   letter-spacing: -0.02em;
 }
@@ -298,10 +204,10 @@ body.panel {
   font-size: 12.5px;
   line-height: 1.45;
   color: var(--label);
-  background: var(--surface);
+  background: var(--card);
   box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.05),
-    0 1px 3px rgba(0, 0, 0, 0.05);
+    inset 0 0 0 1px var(--card-edge),
+    0 1px 3px rgba(0, 0, 0, 0.12);
 }
 
 .notice strong {
@@ -315,7 +221,7 @@ body.panel {
   font-size: 12px;
   font-weight: 500;
   color: #fff;
-  background: var(--blue);
+  background: var(--accent);
   border: none;
   border-radius: 7px;
   cursor: pointer;
@@ -334,28 +240,28 @@ body.panel {
   font-family: var(--mono);
   font-size: 11px;
   color: var(--label);
-  background: var(--canvas);
+  background: var(--input-well);
   user-select: text;
   cursor: text;
   overflow-x: auto;
   white-space: nowrap;
 }
 
-/* Grouped list: one rounded container, hairline separators between rows. */
+/* Grouped list: one glass card, hairline separators between rows. */
 .rows {
   list-style: none;
   border-radius: 12px;
-  background: var(--surface);
+  background: var(--card);
   box-shadow:
-    0 0 0 0.5px rgba(0, 0, 0, 0.05),
-    0 1px 3px rgba(0, 0, 0, 0.05);
+    inset 0 0 0 1px var(--card-edge),
+    0 1px 3px rgba(0, 0, 0, 0.12);
   overflow: hidden;
 }
 
 .row {
   display: flex;
   align-items: center;
-  gap: 11px;
+  gap: 10px;
   padding: 10px 12px;
   transition: background 160ms var(--ease);
 }
@@ -365,23 +271,64 @@ body.panel {
 }
 
 .row.is-focused {
-  background: rgba(0, 122, 255, 0.07);
+  background: var(--focus-tint);
+}
+
+/* Status dot: grey at rest, accent (breathing) while Claude works, orange
+   when the session is blocked waiting on the user. */
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--grey);
+  transition: background 420ms var(--ease);
+}
+
+.dot.busy {
+  background: var(--accent);
+  animation: breathe 2.4s ease-in-out infinite;
+}
+
+.dot.waiting {
+  background: var(--orange);
+}
+
+@keyframes breathe {
+  50% {
+    opacity: 0.55;
+  }
+}
+
+.row .text {
+  flex: 1;
+  min-width: 0;
 }
 
 .row .name {
-  font-size: 13.5px;
+  font-size: 13px;
   font-weight: 600;
+  letter-spacing: -0.01em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .row .desc {
   font-size: 11.5px;
   line-height: 15px;
+  color: var(--secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.row .tile {
-  width: 30px;
-  height: 30px;
-  border-radius: 8px;
+.row .desc:empty {
+  display: none;
+}
+
+.row .rename {
+  text-align: left;
   font-size: 13px;
 }
 
@@ -398,4 +345,30 @@ body.panel {
   line-height: 1.6;
   color: var(--secondary);
   text-align: center;
+}
+
+/* ============================ fallbacks ============================ */
+
+/* Reduce Transparency replaces the vibrancy blur with a flat backing, so the
+   plate becomes near-opaque to keep its own contrast. */
+@media (prefers-reduced-transparency: reduce) {
+  .pill {
+    background: var(--plate-opaque);
+  }
+  body.panel {
+    background: var(--plate-opaque);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill .name.swap,
+  .dot.busy {
+    animation: none;
+  }
+  .pill,
+  .row,
+  .dot,
+  .notice button {
+    transition: none;
+  }
 }

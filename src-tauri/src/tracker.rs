@@ -32,10 +32,13 @@ const RESTAMP_COOLDOWN: Duration = Duration::from_millis(750);
 /// emulator, so this costs nothing when nothing is contesting it.
 const STAMP_HEARTBEAT: Duration = Duration::from_secs(2);
 
-/// Window size. The card inside is inset by 8pt on every side, leaving room for
-/// its shadow and the lift-on-drag scale, so the visible card is 424×68.
-pub const FLOATER_W: f64 = 440.0;
-pub const FLOATER_H: f64 = 84.0;
+/// Pill geometry. The window *is* the pill — its native rounded vibrancy view
+/// carries the glass and shadow, so there is no shadow padding. Width follows
+/// the rendered name (the UI measures and asks for a resize); height is fixed.
+pub const PILL_H: f64 = 30.0;
+pub const PILL_DEFAULT_W: f64 = 160.0;
+pub const PILL_MIN_W: f64 = 56.0;
+pub const PILL_MAX_W: f64 = 320.0;
 const MARGIN: f64 = 12.0;
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -62,7 +65,8 @@ pub struct Snapshot {
     pub focused: Option<SessionView>,
     pub ax_trusted: bool,
     pub enabled: bool,
-    pub anchor_label: String,
+    /// `"dark"` or `"light"`; the UI mirrors it onto `data-theme`.
+    pub appearance: String,
     /// Sessions still competing with Lanyard for their terminal title.
     pub title_conflicts: usize,
 }
@@ -79,6 +83,11 @@ pub struct State {
     /// Where the tracker last anchored the floater, so a drag can reposition
     /// immediately instead of waiting for the next tick.
     pub anchor_pos: Mutex<Option<(f64, f64)>>,
+    /// Current pill size in logical points; the UI resizes it to fit the name.
+    pub pill_size: Mutex<(f64, f64)>,
+    /// The focused terminal's last known rect, kept so a resize or a drag
+    /// release can re-derive placement without waiting for the next AX read.
+    pub last_rect: Mutex<Option<ax::FocusedWindow>>,
 }
 
 impl State {
@@ -89,39 +98,45 @@ impl State {
             restamp: AtomicBool::new(true),
             drag_offset: Mutex::new((0.0, 0.0)),
             anchor_pos: Mutex::new(None),
+            pill_size: Mutex::new((PILL_DEFAULT_W, PILL_H)),
+            last_rect: Mutex::new(None),
         }
     }
 }
 
-fn anchor_label(a: Anchor) -> String {
-    match a {
-        Anchor::TopCenter => "top-center",
-        Anchor::TopLeft => "top-left",
-        Anchor::TopRight => "top-right",
-        Anchor::BottomCenter => "bottom-center",
-        Anchor::BottomLeft => "bottom-left",
-        Anchor::BottomRight => "bottom-right",
-    }
-    .to_string()
-}
-
-/// Places the floater relative to the focused window's rect.
-fn placement(anchor: Anchor, win: &ax::FocusedWindow) -> (f64, f64) {
+/// Places the pill relative to the focused window's rect.
+pub fn placement(anchor: Anchor, win: &ax::FocusedWindow, pill: (f64, f64)) -> (f64, f64) {
+    let (pw, ph) = pill;
     let (x, y) = match anchor {
         Anchor::TopLeft => (win.x + MARGIN, win.y + MARGIN),
-        Anchor::TopCenter => (win.x + (win.w - FLOATER_W) / 2.0, win.y + MARGIN),
-        Anchor::TopRight => (win.x + win.w - FLOATER_W - MARGIN, win.y + MARGIN),
-        Anchor::BottomLeft => (win.x + MARGIN, win.y + win.h - FLOATER_H - MARGIN),
-        Anchor::BottomCenter => (
-            win.x + (win.w - FLOATER_W) / 2.0,
-            win.y + win.h - FLOATER_H - MARGIN,
-        ),
-        Anchor::BottomRight => (
-            win.x + win.w - FLOATER_W - MARGIN,
-            win.y + win.h - FLOATER_H - MARGIN,
-        ),
+        Anchor::TopCenter => (win.x + (win.w - pw) / 2.0, win.y + MARGIN),
+        Anchor::TopRight => (win.x + win.w - pw - MARGIN, win.y + MARGIN),
+        Anchor::BottomLeft => (win.x + MARGIN, win.y + win.h - ph - MARGIN),
+        Anchor::BottomCenter => (win.x + (win.w - pw) / 2.0, win.y + win.h - ph - MARGIN),
+        Anchor::BottomRight => (win.x + win.w - pw - MARGIN, win.y + win.h - ph - MARGIN),
     };
     (x.round(), y.round())
+}
+
+/// The anchor whose placement lies closest to `target` — where a dragged pill
+/// locks when released. The throw's momentum is already projected into
+/// `target` by the caller, so a flick toward a corner lands in that corner.
+pub fn nearest_anchor(
+    target: (f64, f64),
+    win: &ax::FocusedWindow,
+    pill: (f64, f64),
+) -> (Anchor, (f64, f64)) {
+    let mut best = (Anchor::TopRight, placement(Anchor::TopRight, win, pill));
+    let mut best_d = f64::MAX;
+    for anchor in Anchor::ALL {
+        let pos = placement(anchor, win, pill);
+        let d = (pos.0 - target.0).powi(2) + (pos.1 - target.1).powi(2);
+        if d < best_d {
+            best_d = d;
+            best = (anchor, pos);
+        }
+    }
+    best
 }
 
 /// The top-level application hosting a session, found by walking up from the
@@ -268,7 +283,10 @@ fn run(app: AppHandle, state: Arc<State>) {
             focused: focused_view.clone(),
             ax_trusted: trusted,
             enabled: config.enabled,
-            anchor_label: anchor_label(config.anchor),
+            appearance: match config.appearance {
+                crate::store::Appearance::Dark => "dark".into(),
+                crate::store::Appearance::Light => "light".into(),
+            },
             title_conflicts: sessions.iter().filter(|s| !s.title_disabled).count(),
         };
 
@@ -289,7 +307,9 @@ fn run(app: AppHandle, state: Arc<State>) {
                     // While the floater is focused its own rect is reported, so
                     // only reposition from a real terminal window.
                     if win.pid != own_pid && win.w > 0.0 && win.h > 0.0 {
-                        let anchor = placement(config.anchor, win);
+                        let pill = *state.pill_size.lock().unwrap();
+                        let anchor = placement(config.anchor, win, pill);
+                        *state.last_rect.lock().unwrap() = Some(win.clone());
                         *state.anchor_pos.lock().unwrap() = Some(anchor);
                         // Honour any in-flight drag: the anchor keeps tracking
                         // the terminal window even while the pill is displaced.
@@ -328,17 +348,35 @@ mod tests {
         }
     }
 
+    const PILL: (f64, f64) = (200.0, PILL_H);
+
     #[test]
     fn top_center_is_horizontally_centred() {
-        let (x, y) = placement(Anchor::TopCenter, &win());
-        assert_eq!(x, 100.0 + (1000.0 - FLOATER_W) / 2.0);
+        let (x, y) = placement(Anchor::TopCenter, &win(), PILL);
+        assert_eq!(x, 100.0 + (1000.0 - PILL.0) / 2.0);
         assert_eq!(y, 200.0 + MARGIN);
     }
 
     #[test]
     fn bottom_right_stays_inside_the_window() {
-        let (x, y) = placement(Anchor::BottomRight, &win());
-        assert_eq!(x, 100.0 + 1000.0 - FLOATER_W - MARGIN);
-        assert_eq!(y, 200.0 + 800.0 - FLOATER_H - MARGIN);
+        let (x, y) = placement(Anchor::BottomRight, &win(), PILL);
+        assert_eq!(x, 100.0 + 1000.0 - PILL.0 - MARGIN);
+        assert_eq!(y, 200.0 + 800.0 - PILL_H - MARGIN);
+    }
+
+    #[test]
+    fn a_throw_toward_a_corner_locks_to_that_corner() {
+        let w = win();
+        // Released near the bottom-left of the terminal's rect.
+        let (anchor, _) = nearest_anchor((130.0, 950.0), &w, PILL);
+        assert_eq!(anchor, Anchor::BottomLeft);
+    }
+
+    #[test]
+    fn a_drop_near_the_top_middle_locks_to_top_center() {
+        let w = win();
+        let (anchor, pos) = nearest_anchor((480.0, 230.0), &w, PILL);
+        assert_eq!(anchor, Anchor::TopCenter);
+        assert_eq!(pos, placement(Anchor::TopCenter, &w, PILL));
     }
 }
