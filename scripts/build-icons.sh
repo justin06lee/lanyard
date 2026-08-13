@@ -41,6 +41,7 @@ iconutil -c icns "$iconset" -o "$icons/icon.icns"
 render assets/icon-small.svg 32 "$icons/32x32.png"
 echo "rebuilt icon.icns with size-specific artwork"
 
-# tray-icon renders this at 18pt, so 36px is exactly 2x on Retina.
+# tray-icon renders these at 18pt, so 36px is exactly 2x on Retina.
 render assets/tray.svg 36 "$icons/tray.png"
-echo "rendered the menu bar template glyph"
+render assets/tray-alert.svg 36 "$icons/tray-alert.png"
+echo "rendered the menu bar template glyphs"
