@@ -62,14 +62,21 @@ Claude Code sessions afterwards.
 | Rename the focused session | Double-click the name on the pill |
 | Reset to the repo name | Rename it to an empty string |
 | Move the pill | Drag or flick it — it locks to the nearest of six positions and remembers |
-| See every session | Tray › *Sessions…* |
-| Hide/show the pill | Tray › *Toggle floater* |
+| See every session | Tray › *Sessions…*, or **⌃⌘L** from anywhere |
+| Jump to a session | Click its row in the panel — its window (and Space) comes to the front |
+| Hide/show the pill | Tray › *Show pill* |
+
+When a session flips to *waiting on you*, the menu bar glyph grows a badge dot
+and a notification names the session — so a blocked session on another Desktop
+can't idle unnoticed. Light appearance, notifications, title management and
+start-at-login all toggle from the tray menu.
 
 The pill only appears when a Claude Code session has focus. Switch to your
 browser and it gets out of the way.
 
-Settings live in `~/.config/lanyard/config.json`; set `"appearance": "light"`
-there for light glass (the default is `"dark"`).
+Settings live in `~/.config/lanyard/config.json` (the tray covers the common
+ones). `"appearance"`: `"dark"` (default) or `"light"`. `"hotkey"`: the panel
+shortcut, `"ctrl+cmd+l"` by default, `""` to disable.
 
 ---
 

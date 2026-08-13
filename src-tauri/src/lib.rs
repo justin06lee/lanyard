@@ -9,8 +9,10 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::image::Image;
-use tauri::menu::{Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
+use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 use tauri::utils::config::WindowEffectsConfig;
 use tauri::utils::{WindowEffect, WindowEffectState};
 use tauri::{
@@ -157,6 +159,13 @@ fn focus_floater(app: AppHandle) {
     }
 }
 
+/// Brings a session's terminal window to the front (and its Space with it).
+#[tauri::command]
+fn raise_session(pid: i32) -> Result<(), String> {
+    let host = tracker::host_app(pid).ok_or_else(|| "no terminal app found".to_string())?;
+    ax::raise_window(host, pid)
+}
+
 #[tauri::command]
 fn open_panel(app: AppHandle, state: tauri::State<'_, Arc<State>>) -> Result<(), String> {
     let appearance = state.config.lock().unwrap().appearance;
@@ -217,13 +226,78 @@ fn build_floater(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
     Ok(())
 }
 
+/// Applies the configured theme to every window; the webviews re-skin
+/// themselves when the next snapshot carries the new appearance.
+fn apply_theme(app: &AppHandle, appearance: Appearance) {
+    for label in ["floater", "panel"] {
+        if let Some(window) = app.get_webview_window(label) {
+            let _ = window.set_theme(Some(theme_of(appearance)));
+        }
+    }
+}
+
+fn toggle_panel(app: &AppHandle, appearance: Appearance) {
+    if let Some(panel) = app.get_webview_window("panel") {
+        if panel.is_visible().unwrap_or(false) {
+            let _ = panel.hide();
+            return;
+        }
+    }
+    let _ = show_panel(app, appearance);
+}
+
 fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
+    let config = state.config.lock().unwrap().clone();
+    let login = app.autolaunch().is_enabled().unwrap_or(false);
+
     let panel_item = MenuItem::with_id(app, "panel", "Sessions…", true, None::<&str>)?;
-    let toggle_item = MenuItem::with_id(app, "toggle", "Toggle floater", true, None::<&str>)?;
+    let sep1 = PredefinedMenuItem::separator(app)?;
+    let show_item =
+        CheckMenuItem::with_id(app, "toggle", "Show pill", true, config.enabled, None::<&str>)?;
+    let light_item = CheckMenuItem::with_id(
+        app,
+        "light",
+        "Light appearance",
+        true,
+        config.appearance == Appearance::Light,
+        None::<&str>,
+    )?;
+    let notify_item = CheckMenuItem::with_id(
+        app,
+        "notify",
+        "Notify when a session needs you",
+        true,
+        config.notify,
+        None::<&str>,
+    )?;
+    let titles_item = CheckMenuItem::with_id(
+        app,
+        "titles",
+        "Manage window titles",
+        true,
+        config.stamp_titles,
+        None::<&str>,
+    )?;
+    let login_item =
+        CheckMenuItem::with_id(app, "login", "Start at login", true, login, None::<&str>)?;
+    let sep2 = PredefinedMenuItem::separator(app)?;
     let ax_item = MenuItem::with_id(app, "ax", "Accessibility access…", true, None::<&str>)?;
-    let sep = PredefinedMenuItem::separator(app)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Lanyard", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&panel_item, &toggle_item, &sep, &ax_item, &quit_item])?;
+    let menu = Menu::with_items(
+        app,
+        &[
+            &panel_item,
+            &sep1,
+            &show_item,
+            &light_item,
+            &notify_item,
+            &titles_item,
+            &login_item,
+            &sep2,
+            &ax_item,
+            &quit_item,
+        ],
+    )?;
 
     // A template image: macOS ignores the colour and tints the alpha to suit the
     // menu bar, so one black-on-transparent glyph reads in both light and dark.
@@ -234,6 +308,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
         .icon_as_template(true)
         .show_menu_on_left_click(true);
 
+    // The check items toggle themselves; handlers read the new state back.
     tray.on_menu_event(move |app, event| match event.id().as_ref() {
         "panel" => {
             let appearance = state.config.lock().unwrap().appearance;
@@ -241,8 +316,43 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
         }
         "toggle" => {
             let mut config = state.config.lock().unwrap();
-            config.enabled = !config.enabled;
+            config.enabled = show_item.is_checked().unwrap_or(!config.enabled);
             let _ = config.save();
+        }
+        "light" => {
+            let appearance = if light_item.is_checked().unwrap_or(false) {
+                Appearance::Light
+            } else {
+                Appearance::Dark
+            };
+            {
+                let mut config = state.config.lock().unwrap();
+                config.appearance = appearance;
+                let _ = config.save();
+            }
+            apply_theme(app, appearance);
+        }
+        "notify" => {
+            let mut config = state.config.lock().unwrap();
+            config.notify = notify_item.is_checked().unwrap_or(true);
+            let _ = config.save();
+        }
+        "titles" => {
+            let mut config = state.config.lock().unwrap();
+            config.stamp_titles = titles_item.is_checked().unwrap_or(true);
+            let _ = config.save();
+        }
+        "login" => {
+            let manager = app.autolaunch();
+            let result = if login_item.is_checked().unwrap_or(false) {
+                manager.enable()
+            } else {
+                manager.disable()
+            };
+            if result.is_err() {
+                // Reflect reality if the launcher refused.
+                let _ = login_item.set_checked(manager.is_enabled().unwrap_or(false));
+            }
         }
         "ax" => {
             ax::request_trust();
@@ -260,6 +370,12 @@ pub fn run() {
     let state = Arc::new(State::new(Config::load()));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
+        .plugin(tauri_plugin_autostart::init(
+            MacosLauncher::LaunchAgent,
+            None,
+        ))
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(state.clone())
         .invoke_handler(tauri::generate_handler![
             get_state,
@@ -270,6 +386,7 @@ pub fn run() {
             set_drag_offset,
             commit_drag,
             focus_floater,
+            raise_session,
             open_panel
         ])
         .setup(move |app| {
@@ -277,10 +394,30 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let appearance = state.config.lock().unwrap().appearance;
+            let (appearance, hotkey) = {
+                let config = state.config.lock().unwrap();
+                (config.appearance, config.hotkey.trim().to_string())
+            };
             let handle = app.handle().clone();
             build_floater(&handle, appearance)?;
             build_tray(&handle, state.clone())?;
+
+            // The panel from anywhere, hands on the keyboard. An unparseable
+            // or taken shortcut costs the hotkey, never the app.
+            if !hotkey.is_empty() {
+                let shortcut_state = state.clone();
+                if let Err(e) = app.global_shortcut().on_shortcut(
+                    hotkey.as_str(),
+                    move |app, _shortcut, event| {
+                        if event.state == ShortcutState::Pressed {
+                            let appearance = shortcut_state.config.lock().unwrap().appearance;
+                            toggle_panel(app, appearance);
+                        }
+                    },
+                ) {
+                    eprintln!("lanyard: could not register hotkey {hotkey:?}: {e}");
+                }
+            }
 
             if !ax::is_trusted() {
                 // Ask once on first run; the tray item re-opens it later.
