@@ -44,7 +44,21 @@ function buildRow(session) {
   pid.textContent = session.pid;
   li.appendChild(pid);
 
-  name.addEventListener("dblclick", () => startEdit(text, name, session));
+  // Single click jumps to the session's terminal (and its Space); the short
+  // delay gives a double-click the chance to mean "rename" instead.
+  let clickTimer = 0;
+  li.addEventListener("click", () => {
+    if (editing) return;
+    clearTimeout(clickTimer);
+    clickTimer = setTimeout(
+      () => invoke("raise_session", { pid: session.pid }).catch(() => {}),
+      250,
+    );
+  });
+  name.addEventListener("dblclick", () => {
+    clearTimeout(clickTimer);
+    startEdit(text, name, session);
+  });
   return li;
 }
 

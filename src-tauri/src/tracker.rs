@@ -10,12 +10,17 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use tauri::image::Image;
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager};
+use tauri_plugin_notification::NotificationExt;
 
 use crate::ax;
 use crate::sessions::{Scanner, Session};
 use crate::store::{Anchor, Config};
 use crate::title;
+
+const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
+const TRAY_ALERT: &[u8] = include_bytes!("../icons/tray-alert.png");
 
 const FOCUS_TICK: Duration = Duration::from_millis(200);
 const RESCAN_EVERY: Duration = Duration::from_millis(1000);
@@ -207,6 +212,12 @@ fn run(app: AppHandle, state: Arc<State>) {
     let mut last_emitted: Option<Snapshot> = None;
     let mut floater_visible = false;
 
+    // Waiting-state bookkeeping: the tray badge, and one notification per
+    // idle→waiting transition.
+    let mut prev_status: HashMap<i32, String> = HashMap::new();
+    let mut tray_alerted = false;
+    let mut first_scan = true;
+
     let own_pid = std::process::id() as i32;
 
     loop {
@@ -218,6 +229,45 @@ fn run(app: AppHandle, state: Arc<State>) {
             last_scan = Instant::now();
             ancestor_cache.retain(|pid, _| sessions.iter().any(|s| s.pid == *pid));
             stamped.retain(|pid, _| sessions.iter().any(|s| s.pid == *pid));
+
+            // The pill shows nothing but the name, so "a session needs you"
+            // is surfaced globally instead: a badge on the menu bar glyph…
+            let waiting = sessions
+                .iter()
+                .any(|s| s.status.as_deref() == Some("waiting"));
+            if waiting != tray_alerted {
+                tray_alerted = waiting;
+                if let Some(tray) = app.tray_by_id("lanyard") {
+                    let bytes: &[u8] = if waiting { TRAY_ALERT } else { TRAY_ICON };
+                    if let Ok(icon) = Image::from_bytes(bytes) {
+                        let _ = tray.set_icon(Some(icon));
+                        let _ = tray.set_icon_as_template(true);
+                    }
+                }
+            }
+            // …and a notification on the moment of transition. The first scan
+            // is exempt so launching Lanyard doesn't fire a backlog at once.
+            if config.notify && !first_scan {
+                for s in &sessions {
+                    let now_waiting = s.status.as_deref() == Some("waiting");
+                    let was_waiting =
+                        prev_status.get(&s.pid).map(String::as_str) == Some("waiting");
+                    if now_waiting && !was_waiting {
+                        let name = config.name_for(&s.session_id, &s.cwd, &s.repo);
+                        let _ = app
+                            .notification()
+                            .builder()
+                            .title(name)
+                            .body("Claude is waiting on you")
+                            .show();
+                    }
+                }
+            }
+            first_scan = false;
+            prev_status = sessions
+                .iter()
+                .filter_map(|s| s.status.clone().map(|status| (s.pid, status)))
+                .collect();
         }
 
         // Terminal apps currently hosting a Claude session.

@@ -10,17 +10,18 @@
 
 use accessibility_sys::{
     kAXErrorSuccess, kAXFocusedApplicationAttribute, kAXFocusedWindowAttribute,
-    kAXFrontmostAttribute, kAXPositionAttribute, kAXSizeAttribute, kAXTitleAttribute,
-    kAXTrustedCheckOptionPrompt,
-    kAXValueTypeCGPoint, kAXValueTypeCGSize, AXIsProcessTrusted, AXIsProcessTrustedWithOptions,
+    kAXFrontmostAttribute, kAXMainAttribute, kAXPositionAttribute, kAXRaiseAction,
+    kAXSizeAttribute, kAXTitleAttribute, kAXTrustedCheckOptionPrompt, kAXValueTypeCGPoint,
+    kAXValueTypeCGSize, kAXWindowsAttribute, AXIsProcessTrusted, AXIsProcessTrustedWithOptions,
     AXUIElementCopyAttributeValue, AXUIElementCreateApplication, AXUIElementCreateSystemWide,
-    AXUIElementGetPid, AXUIElementRef,
+    AXUIElementGetPid, AXUIElementPerformAction, AXUIElementRef, AXUIElementSetAttributeValue,
     AXUIElementSetMessagingTimeout, AXValueGetValue, AXValueRef,
 };
 use core_foundation::base::{CFGetTypeID, CFRelease, CFTypeRef, TCFType};
 use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::{CFString, CFStringRef};
+use core_foundation_sys::array::{CFArrayGetCount, CFArrayGetValueAtIndex};
 use std::os::raw::c_void;
 
 #[repr(C)]
@@ -186,6 +187,58 @@ pub fn probe_app(pid: i32) -> Result<String, String> {
         let window = CfOwned(window);
         attr_string(window.0 as AXUIElementRef, kAXTitleAttribute)
             .ok_or_else(|| "window has no AXTitle".into())
+    }
+}
+
+/// Raises the terminal window hosting `session_pid` and brings its app to the
+/// front. The window is found by the Lanyard token in its title, the same
+/// channel focus resolution uses, so tabbed terminals resolve to the right
+/// window. Activating the app also carries macOS to that window's Space.
+pub fn raise_window(app_pid: i32, session_pid: i32) -> Result<(), String> {
+    unsafe {
+        let app = AXUIElementCreateApplication(app_pid as libc::pid_t);
+        if app.is_null() {
+            return Err("AXUIElementCreateApplication returned null".into());
+        }
+        let app = CfOwned(app as CFTypeRef);
+        let app_ref = app.0 as AXUIElementRef;
+        AXUIElementSetMessagingTimeout(app_ref, 0.25);
+
+        let Some(windows) = copy_attr(app_ref, kAXWindowsAttribute) else {
+            return Err("app reports no AXWindows".into());
+        };
+        let array = windows.0 as core_foundation_sys::array::CFArrayRef;
+        let count = CFArrayGetCount(array);
+        for i in 0..count {
+            let window = CFArrayGetValueAtIndex(array, i) as AXUIElementRef;
+            if window.is_null() {
+                continue;
+            }
+            let title = attr_string(window, kAXTitleAttribute).unwrap_or_default();
+            if crate::title::parse_pid(&title) != Some(session_pid) {
+                continue;
+            }
+            // Make it the app's main window, lift it, then front the app.
+            let main = CFString::new(kAXMainAttribute);
+            let _ = AXUIElementSetAttributeValue(
+                window,
+                main.as_concrete_TypeRef(),
+                CFBoolean::true_value().as_CFTypeRef(),
+            );
+            let raise = CFString::new(kAXRaiseAction);
+            let _ = AXUIElementPerformAction(window, raise.as_concrete_TypeRef());
+            let front = CFString::new(kAXFrontmostAttribute);
+            let err = AXUIElementSetAttributeValue(
+                app_ref,
+                front.as_concrete_TypeRef(),
+                CFBoolean::true_value().as_CFTypeRef(),
+            );
+            if err != kAXErrorSuccess {
+                return Err(format!("AXFrontmost -> AXError {err}"));
+            }
+            return Ok(());
+        }
+        Err("no window carries this session's title tag".into())
     }
 }
 

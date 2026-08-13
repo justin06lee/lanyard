@@ -74,6 +74,16 @@ pub struct Config {
     pub stamp_titles: bool,
     #[serde(default = "default_appearance")]
     pub appearance: Appearance,
+    /// Post a notification when a session flips to `waiting`.
+    #[serde(default = "default_true")]
+    pub notify: bool,
+    /// Global shortcut that opens the sessions panel. Empty string disables.
+    #[serde(default = "default_hotkey")]
+    pub hotkey: String,
+}
+
+fn default_hotkey() -> String {
+    "ctrl+cmd+l".into()
 }
 
 impl Default for Config {
@@ -85,6 +95,8 @@ impl Default for Config {
             enabled: true,
             stamp_titles: true,
             appearance: default_appearance(),
+            notify: true,
+            hotkey: default_hotkey(),
         }
     }
 }
