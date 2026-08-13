@@ -1,25 +1,36 @@
 //! Terminal-title identity channel.
 //!
 //! Claude Code names every window `✳ Claude Code`, which is precisely why you
-//! can't tell sessions apart. gru writes its own OSC title to each session's
-//! tty, embedding a machine-readable token. Because Alacritty is configured
-//! `decorations = "Buttonless"` the title is invisible in the window itself —
-//! it only surfaces in Mission Control, where the leading human name is a bonus.
+//! can't tell sessions apart. Lanyard writes its own OSC title to each
+//! session's tty, embedding a machine-readable token. Because Alacritty is
+//! configured `decorations = "Buttonless"` the title is invisible in the window
+//! itself — it only surfaces in Mission Control, where the leading human name
+//! is a bonus.
 
 use std::fs::OpenOptions;
 use std::io::Write;
 
-const OPEN: &str = "\u{27E6}gru:";
+const OPEN: &str = "\u{27E6}lanyard:";
 const CLOSE: char = '\u{27E7}';
+/// Token written by pre-rename builds; still honoured so already-running
+/// sessions hand over cleanly the first time the new binary starts.
+const LEGACY_OPEN: &str = "\u{27E6}gru:";
 
-/// `my-project ⟦gru:29260⟧`
+/// `my-project ⟦lanyard:29260⟧`
 pub fn compose(name: &str, pid: i32) -> String {
     format!("{name} {OPEN}{pid}{CLOSE}")
 }
 
-/// Recovers the session pid from a window title, if gru stamped it.
+/// Recovers the session pid from a window title, if Lanyard stamped it.
 pub fn parse_pid(title: &str) -> Option<i32> {
-    let start = title.find(OPEN)? + OPEN.len();
+    parse_with(title, OPEN).or_else(|| parse_with(title, LEGACY_OPEN))
+}
+
+/// The *last* occurrence wins: `compose` appends the token, so if a
+/// user-chosen name happens to contain a literal token, ours is still the
+/// rightmost one.
+fn parse_with(title: &str, open: &str) -> Option<i32> {
+    let start = title.rfind(open)? + open.len();
     let rest = &title[start..];
     let end = rest.find(CLOSE)?;
     rest[..end].trim().parse().ok()
@@ -50,6 +61,17 @@ mod tests {
     fn tolerates_names_containing_brackets() {
         let t = compose("weird ⟦name⟧", 42);
         assert_eq!(parse_pid(&t), Some(42));
+    }
+
+    #[test]
+    fn a_name_containing_a_literal_token_cannot_spoof_the_pid() {
+        let t = compose("prank ⟦lanyard:999⟧", 42);
+        assert_eq!(parse_pid(&t), Some(42));
+    }
+
+    #[test]
+    fn still_reads_titles_stamped_by_the_old_binary() {
+        assert_eq!(parse_pid("hikmah.chat ⟦gru:6202⟧"), Some(6202));
     }
 
     #[test]

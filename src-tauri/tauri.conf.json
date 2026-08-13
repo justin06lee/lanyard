@@ -1,9 +1,9 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "gru",
-  "mainBinaryName": "gru",
+  "productName": "Lanyard",
+  "mainBinaryName": "lanyard",
   "version": "0.1.0",
-  "identifier": "dev.justin06lee.gru",
+  "identifier": "dev.justin06lee.lanyard",
   "build": {
     "frontendDist": "../ui"
   },

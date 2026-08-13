@@ -89,7 +89,7 @@ fn show_panel(app: &AppHandle) -> tauri::Result<()> {
         return Ok(());
     }
     let panel = WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("panel.html".into()))
-        .title("gru — sessions")
+        .title("Lanyard — sessions")
         .inner_size(420.0, 520.0)
         .min_inner_size(360.0, 240.0)
         .resizable(true)
@@ -100,7 +100,7 @@ fn show_panel(app: &AppHandle) -> tauri::Result<()> {
 
 fn build_floater(app: &AppHandle) -> tauri::Result<()> {
     let floater = WebviewWindowBuilder::new(app, "floater", WebviewUrl::App("index.html".into()))
-        .title("gru")
+        .title("Lanyard")
         .inner_size(FLOATER_W, FLOATER_H)
         .decorations(false)
         .transparent(true)
@@ -122,7 +122,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
     let anchor_item = MenuItem::with_id(app, "anchor", "Move floater", true, None::<&str>)?;
     let ax_item = MenuItem::with_id(app, "ax", "Accessibility access…", true, None::<&str>)?;
     let sep = PredefinedMenuItem::separator(app)?;
-    let quit_item = MenuItem::with_id(app, "quit", "Quit gru", true, None::<&str>)?;
+    let quit_item = MenuItem::with_id(app, "quit", "Quit Lanyard", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
@@ -138,7 +138,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
     // A template image: macOS ignores the colour and tints the alpha to suit the
     // menu bar, so one black-on-transparent glyph reads in both light and dark.
     // tray-icon scales it to 18pt, so 36px is exactly 2x on a Retina display.
-    let tray = TrayIconBuilder::with_id("gru")
+    let tray = TrayIconBuilder::with_id("lanyard")
         .menu(&menu)
         .icon(Image::from_bytes(TRAY_ICON)?)
         .icon_as_template(true)
@@ -211,5 +211,5 @@ pub fn run() {
             }
         })
         .run(tauri::generate_context!())
-        .expect("error while running gru");
+        .expect("error while running Lanyard");
 }

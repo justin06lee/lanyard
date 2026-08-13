@@ -1,17 +1,17 @@
-//! Prints exactly what gru sees, without the GUI in the way.
+//! Prints exactly what Lanyard sees, without the GUI in the way.
 //!
 //! Run it from a terminal when the floater shows the wrong session — or
 //! nothing at all — to find out which half is misbehaving.
 //!
-//!     cargo run --manifest-path src-tauri/Cargo.toml --bin gru-doctor
+//!     cargo run --manifest-path src-tauri/Cargo.toml --bin lanyard-doctor
 
-use gru_lib::{ax, sessions, store::Config, title, tracker::host_app};
+use lanyard_lib::{ax, sessions, store::Config, title, tracker::host_app};
 
 fn main() {
     let config = Config::load();
 
-    println!("gru doctor");
-    println!("──────────");
+    println!("lanyard doctor");
+    println!("──────────────");
     println!(
         "accessibility : {}",
         if ax::is_trusted() {
@@ -85,7 +85,7 @@ fn main() {
                 }
                 Some(pid) => println!("  resolved    : tagged pid {pid}, but no such live session"),
                 None => println!(
-                    "  resolved    : no gru tag in this title — either it isn't a \
+                    "  resolved    : no Lanyard tag in this title — either it isn't a \
                      Claude terminal, or the title was overwritten"
                 ),
             }
@@ -102,8 +102,8 @@ fn probe_extra() {
             Err(why) => println!("probe {pid:<7} : {why}"),
             Ok(t) => {
                 let tag = match title::parse_pid(&t) {
-                    Some(session) => format!("gru tag -> session {session}"),
-                    None => "no gru tag".into(),
+                    Some(session) => format!("Lanyard tag -> session {session}"),
+                    None => "no Lanyard tag".into(),
                 };
                 println!("probe {pid:<7} : {t:?}\n                {tag}");
             }
@@ -112,5 +112,5 @@ fn probe_extra() {
 }
 
 fn store_path() -> String {
-    gru_lib::store::config_path().display().to_string()
+    lanyard_lib::store::config_path().display().to_string()
 }

@@ -1,4 +1,4 @@
-const { describe, monogram, statusOf } = window.gru;
+const { describe, monogram, statusOf } = window.lanyard;
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
@@ -98,7 +98,7 @@ function render(state) {
     const n = state.titleConflicts;
     setupTitle.textContent = `${n} session${n === 1 ? "" : "s"} still control their own title.`;
     setupText.textContent =
-      " gru has to keep reclaiming it, which you may notice in Mission Control." +
+      " Lanyard has to keep reclaiming it, which you may notice in Mission Control." +
       " Add this to your shell profile and restart them:";
   }
 
@@ -117,5 +117,5 @@ grant.addEventListener("click", () =>
   invoke("request_accessibility").catch(() => {}),
 );
 
-listen("gru://state", (event) => render(event.payload));
+listen("lanyard://state", (event) => render(event.payload));
 invoke("get_state").then(render).catch(() => {});

@@ -1,7 +1,7 @@
 // Presentation helpers shared by the floater and the sessions panel.
 // A classic script rather than an ES module, so it works the same under Tauri's
 // asset protocol without depending on module MIME handling.
-window.gru = (() => {
+window.lanyard = (() => {
   /** Collapses Claude Code's status into the three we render differently. */
   function statusOf(session) {
     const status = session.status;

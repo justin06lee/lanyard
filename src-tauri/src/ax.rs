@@ -59,7 +59,7 @@ impl Drop for CfOwned {
     }
 }
 
-/// True once the user has ticked gru in System Settings › Privacy › Accessibility.
+/// True once the user has ticked Lanyard in System Settings › Privacy › Accessibility.
 pub fn is_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
 }
@@ -163,7 +163,7 @@ pub fn focus_diagnostic() -> String {
     }
 }
 
-/// Probes a specific application's focused window. Used by `gru-doctor` to tell
+/// Probes a specific application's focused window. Used by `lanyard-doctor` to tell
 /// a permissions problem apart from a system-wide-query problem.
 pub fn probe_app(pid: i32) -> Result<String, String> {
     unsafe {
@@ -200,7 +200,7 @@ unsafe fn attr_bool(element: AXUIElementRef, attribute: &str) -> Option<bool> {
 /// Deliberately *not* the system-wide `AXFocusedApplication` attribute: that
 /// query returns kAXErrorCannotComplete (-25204) on this setup even with
 /// Accessibility fully granted, while per-application queries work fine.
-/// Scoping to known terminal apps is also exactly the semantics gru wants —
+/// Scoping to known terminal apps is also exactly the semantics Lanyard wants —
 /// when the user is in a browser, nothing matches and the floater hides.
 ///
 /// Returns `None` when no listed app is frontmost or AX permission is missing.

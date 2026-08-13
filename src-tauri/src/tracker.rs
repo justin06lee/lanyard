@@ -20,13 +20,13 @@ use crate::title;
 const FOCUS_TICK: Duration = Duration::from_millis(200);
 const RESCAN_EVERY: Duration = Duration::from_millis(1000);
 /// Sessions started without `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` keep rewriting
-/// their own title, so gru has to re-stamp. Throttle that tug-of-war.
+/// their own title, so Lanyard has to re-stamp. Throttle that tug-of-war.
 const RESTAMP_COOLDOWN: Duration = Duration::from_millis(750);
 /// Re-stamp every title periodically, not just when a bad one is noticed.
 ///
-/// gru can only detect a clobbered title on the window it can see — the focused
+/// Lanyard can only detect a clobbered title on the window it can see — the focused
 /// one. A background window whose title Claude Code overwrote would stay stale
-/// until you switched to it, and gru would then briefly assert the *previous*
+/// until you switched to it, and Lanyard would then briefly assert the *previous*
 /// session's name. Showing the wrong name is worse than showing none, so keep
 /// every title fresh instead. Writing an identical title is a no-op for the
 /// emulator, so this costs nothing when nothing is contesting it.
@@ -63,7 +63,7 @@ pub struct Snapshot {
     pub ax_trusted: bool,
     pub enabled: bool,
     pub anchor_label: String,
-    /// Sessions still competing with gru for their terminal title.
+    /// Sessions still competing with Lanyard for their terminal title.
     pub title_conflicts: usize,
 }
 
@@ -211,7 +211,7 @@ fn run(app: AppHandle, state: Arc<State>) {
             .filter_map(|s| *ancestor_cache.entry(s.pid).or_insert_with(|| host_app(s.pid)))
             .collect();
 
-        // gru's own window counts as "still on this session" so that clicking
+        // Lanyard's own window counts as "still on this session" so that clicking
         // the floater to rename doesn't read as focus leaving the terminal.
         let mut candidates: Vec<i32> = terminal_pids.iter().copied().collect();
         candidates.push(own_pid);
@@ -277,7 +277,7 @@ fn run(app: AppHandle, state: Arc<State>) {
         }
 
         if last_emitted.as_ref() != Some(&snapshot) {
-            let _ = app.emit("gru://state", &snapshot);
+            let _ = app.emit("lanyard://state", &snapshot);
             last_emitted = Some(snapshot);
         }
 
