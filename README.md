@@ -33,19 +33,21 @@ dark by default, light by configuration, and exactly as wide as its text.
 Requires Rust and Node.
 
 ```bash
-npm install
-npm run build          # produces src-tauri/target/release/bundle/macos/Lanyard.app
-cp -r src-tauri/target/release/bundle/macos/Lanyard.app /Applications/
-./scripts/setup-shell.sh
+make
 ```
 
-Then launch Lanyard from /Applications. It lives in the menu bar — there is no Dock
-icon.
+That builds the app, installs it to /Applications, clears any stale
+Accessibility grant, sets up your shell profile, and launches it. Lanyard
+lives in the menu bar — there is no Dock icon. (`make build`, `make install`,
+`make test`, `make doctor` and friends exist too; see the Makefile.)
 
-On first launch macOS will ask for **Accessibility** access. Lanyard needs it to see
-which window has focus; without it the floater stays hidden. If you miss the
-prompt: System Settings › Privacy & Security › Accessibility, then add Lanyard. The
-tray menu's *Accessibility access…* item reopens the prompt.
+On launch macOS asks for **Accessibility** access. Lanyard needs it to see
+which window has focus; without it the pill stays hidden. The request is
+self-repairing: macOS only shows the consent prompt while no entry exists for
+the app, so a stale grant (from a rebuild) or a previously dismissed prompt
+would normally swallow the request silently — Lanyard clears its own entry
+first whenever it finds itself untrusted, so the prompt always appears. The
+tray menu's *Accessibility access…* item re-runs it any time.
 
 `setup-shell.sh` appends `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to your shell
 profile — see [How it works](#how-it-works) for why that matters. Restart your
@@ -206,9 +208,10 @@ The dev build is a different binary from the bundled app, so macOS treats it as
 a separate Accessibility entry — you'll be asked to grant access twice.
 
 The app is unsigned, and macOS keys Accessibility grants to a binary's code
-hash, so **every rebuild needs re-approving**. If the floater stops appearing
-after `npm run build`, remove the stale Lanyard entry in System Settings › Privacy
-& Security › Accessibility and add the new one.
+hash, so **every rebuild strands the previous grant**. `make install` clears
+the stale entry for you, and the app itself re-prompts at launch whenever it
+finds itself untrusted — so the worst case after a rebuild is granting the
+fresh prompt again, never spelunking through System Settings.
 
 ---
 
@@ -216,8 +219,9 @@ after `npm run build`, remove the stale Lanyard entry in System Settings › Pri
 
 Run `lanyard-doctor` first — it answers most of these directly.
 
-**The floater never appears.** Check Accessibility access is granted to the
-binary you're actually running. Tray › *Sessions…* shows a banner when it isn't.
+**The pill never appears.** Check Accessibility access is granted to the
+binary you're actually running. Tray › *Sessions…* shows a banner when it
+isn't, and tray › *Accessibility access…* clears any stale grant and re-asks.
 `lanyard-doctor` prints `accessibility : granted` when it's in order.
 
 **It shows the wrong session, or lags a moment behind.** Almost always the title

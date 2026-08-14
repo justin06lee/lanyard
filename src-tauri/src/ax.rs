@@ -60,13 +60,16 @@ impl Drop for CfOwned {
     }
 }
 
+/// Must match `identifier` in tauri.conf.json — it names our own TCC entry.
+const BUNDLE_ID: &str = "dev.justin06lee.lanyard";
+
 /// True once the user has ticked Lanyard in System Settings › Privacy › Accessibility.
 pub fn is_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
 }
 
 /// Same check, but pops the system prompt that deep-links into System Settings.
-pub fn request_trust() -> bool {
+fn request_trust() -> bool {
     unsafe {
         let key = CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt);
         let opts = CFDictionary::from_CFType_pairs(&[(
@@ -75,6 +78,25 @@ pub fn request_trust() -> bool {
         )]);
         AXIsProcessTrustedWithOptions(opts.as_concrete_TypeRef())
     }
+}
+
+/// Requests Accessibility access in a way that always produces the prompt.
+///
+/// macOS keys the grant to the binary's code signature and only shows the
+/// consent dialog while *no* TCC entry exists for the bundle id. An unsigned
+/// app trips over that constantly: every rebuild strands the old grant, and a
+/// once-dismissed prompt never returns — the request is swallowed silently and
+/// the app looks broken. Clearing our own entry first (a no-op when none
+/// exists) restores the prompt. A working grant is never touched: this returns
+/// early when already trusted.
+pub fn repair_trust() -> bool {
+    if is_trusted() {
+        return true;
+    }
+    let _ = std::process::Command::new("/usr/bin/tccutil")
+        .args(["reset", "Accessibility", BUNDLE_ID])
+        .status();
+    request_trust()
 }
 
 /// Copies an AX attribute, returning an owned CF ref.
