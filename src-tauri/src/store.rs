@@ -105,23 +105,11 @@ pub fn config_path() -> PathBuf {
     home_dir().join(".config").join("lanyard").join("config.json")
 }
 
-/// Where the app kept its config before the rename from "gru".
-fn legacy_config_path() -> PathBuf {
-    home_dir().join(".config").join("gru").join("config.json")
-}
-
 impl Config {
-    /// Loads the config, falling back to the pre-rename location so existing
-    /// names and placement survive the upgrade. The old file is left in place;
-    /// the first save writes the new path and it is never read again.
     pub fn load() -> Self {
-        let read = |path: PathBuf| {
-            std::fs::read_to_string(path)
-                .ok()
-                .and_then(|raw| serde_json::from_str(&raw).ok())
-        };
-        read(config_path())
-            .or_else(|| read(legacy_config_path()))
+        std::fs::read_to_string(config_path())
+            .ok()
+            .and_then(|raw| serde_json::from_str(&raw).ok())
             .unwrap_or_default()
     }
 
