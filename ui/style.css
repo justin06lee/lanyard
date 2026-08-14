@@ -173,8 +173,16 @@ body.floater {
 
 body.panel {
   background: var(--wash);
-  padding: 0 12px 14px;
+  padding: 0 12px;
   overflow-y: auto;
+}
+
+/* Real scroll-height at the bottom, so the last capsule never sits flush
+   against the window edge (padding on a scroll container doesn't count). */
+body.panel::after {
+  content: "";
+  display: block;
+  height: 16px;
 }
 
 /* Slim header strip: the traffic lights float over its left edge (overlay
@@ -316,6 +324,15 @@ body.panel {
 .row .text {
   flex: 1;
   min-width: 0;
+}
+
+/* Panel text is real information — names, summaries, pids — so it stays
+   selectable for copying (the pill's label, being UI chrome, does not). */
+.row .name,
+.row .desc,
+.row .pid,
+.notice {
+  user-select: text;
 }
 
 .row .name {

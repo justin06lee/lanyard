@@ -72,7 +72,9 @@ can't idle unnoticed. Light appearance, notifications, title management and
 start-at-login all toggle from the tray menu.
 
 The pill only appears when a Claude Code session has focus. Switch to your
-browser and it gets out of the way.
+browser and it gets out of the way. The panel behaves like a popover: click
+anywhere else and it dismisses itself — **⌃⌘L** or the tray brings it back on
+whatever Space you're on.
 
 Settings live in `~/.config/lanyard/config.json` (the tray covers the common
 ones). `"appearance"`: `"dark"` (default) or `"light"`. `"hotkey"`: the panel
