@@ -180,10 +180,15 @@ fn show_panel(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
     }
     let panel = WebviewWindowBuilder::new(app, "panel", WebviewUrl::App("panel.html".into()))
         .title("Lanyard — sessions")
-        .inner_size(420.0, 520.0)
-        .min_inner_size(360.0, 240.0)
+        .inner_size(380.0, 480.0)
+        .min_inner_size(340.0, 220.0)
         .resizable(true)
         .transparent(true)
+        // Frameless glass: the title bar overlays the content and shows only
+        // the traffic lights; a drag-region header in the page stands in for
+        // the missing chrome.
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
         .theme(Some(theme_of(appearance)))
         .effects(WindowEffectsConfig {
             effects: vec![WindowEffect::Sidebar],

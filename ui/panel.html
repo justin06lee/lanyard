@@ -6,9 +6,10 @@
     <link rel="stylesheet" href="style.css" />
   </head>
   <body class="panel">
-    <header class="panel-head">
-      <h1>Sessions</h1>
-      <span class="count" id="count"></span>
+    <!-- The window's title bar is an overlay showing only the traffic lights;
+         this strip is the drag handle and carries the one fact worth a line. -->
+    <header class="panel-head" data-tauri-drag-region>
+      <span class="count" id="count" data-tauri-drag-region></span>
     </header>
 
     <div class="notice" id="notice" hidden>
