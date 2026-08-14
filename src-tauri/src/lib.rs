@@ -63,7 +63,7 @@ fn set_enabled(enabled: bool, state: tauri::State<'_, Arc<State>>) -> Result<(),
 
 #[tauri::command]
 fn request_accessibility() -> bool {
-    ax::request_trust()
+    ax::repair_trust()
 }
 
 /// Sizes the pill to its text. The UI measures the rendered name and asks for
@@ -355,7 +355,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
             }
         }
         "ax" => {
-            ax::request_trust();
+            ax::repair_trust();
         }
         "quit" => app.exit(0),
         _ => {}
@@ -420,8 +420,9 @@ pub fn run() {
             }
 
             if !ax::is_trusted() {
-                // Ask once on first run; the tray item re-opens it later.
-                ax::request_trust();
+                // Self-repairing: clears any stale/denied TCC entry so the
+                // prompt actually appears. The tray item re-runs it later.
+                ax::repair_trust();
             }
 
             tracker::spawn(handle, state.clone());
