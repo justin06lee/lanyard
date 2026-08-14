@@ -121,8 +121,28 @@ pub fn proc_info(pid: i32) -> Option<ProcInfo> {
 }
 
 /// The parent of a pid, for walking up to the terminal app hosting a session.
+///
+/// Deliberately *not* `proc_info`: the full `PROC_PIDTBSDINFO` flavor is
+/// refused across users, and the walk from a session to its terminal app
+/// crosses root-owned `/usr/bin/login` — stopping there would misidentify
+/// `login` as the terminal. The short flavor answers for any process, the way
+/// `ps` can.
 pub fn parent_of(pid: i32) -> Option<i32> {
-    proc_info(pid).map(|info| info.ppid)
+    unsafe {
+        let mut info = std::mem::MaybeUninit::<libc::proc_bsdshortinfo>::uninit();
+        let size = std::mem::size_of::<libc::proc_bsdshortinfo>() as libc::c_int;
+        let read = libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDT_SHORTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        );
+        if read < size {
+            return None;
+        }
+        Some(info.assume_init().pbsi_ppid as i32)
+    }
 }
 
 fn c_string(chars: &[libc::c_char]) -> String {
@@ -505,6 +525,14 @@ mod tests {
         let info = proc_info(me).expect("proc_pidinfo should work on ourselves");
         assert!(info.ppid > 0);
         assert!(!info.name.is_empty());
+    }
+
+    #[test]
+    fn parent_of_crosses_user_boundaries() {
+        // launchd is root-owned; a same-user-only API would refuse it. Its
+        // parent is the kernel, pid 0. The terminal-app walk depends on this
+        // working, because it passes through root-owned /usr/bin/login.
+        assert_eq!(parent_of(1), Some(0));
     }
 
     #[test]
