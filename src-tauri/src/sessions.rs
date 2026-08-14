@@ -10,7 +10,6 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
-use std::process::Command;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -59,23 +58,94 @@ fn claude_dir() -> PathBuf {
         .unwrap_or_else(|| home_dir().join(".claude"))
 }
 
-/// One `ps` sweep gives liveness, tty and command name for every process.
-fn process_table() -> HashMap<i32, (Option<String>, String)> {
-    let mut table = HashMap::new();
-    let Ok(out) = Command::new("ps").args(["-Ao", "pid=,tty=,comm="]).output() else {
-        return table;
-    };
-    for line in String::from_utf8_lossy(&out.stdout).lines() {
-        let mut parts = line.split_whitespace();
-        let (Some(pid), Some(tty)) = (parts.next(), parts.next()) else {
-            continue;
-        };
-        let Ok(pid) = pid.parse::<i32>() else { continue };
-        let comm = parts.collect::<Vec<_>>().join(" ");
-        let tty = (tty != "??" && !tty.is_empty()).then(|| tty.to_string());
-        table.insert(pid, (tty, comm));
+/// BSD-layer facts about one process, read straight from the kernel — no
+/// subprocess, no parsing, a few microseconds per call.
+pub struct ProcInfo {
+    /// The kernel's immutable command name (`p_comm`, 15 chars). Claude Code
+    /// repaints its visible title (`pbi_name`) with version info, so identity
+    /// checks must look here.
+    pub comm: String,
+    /// The (possibly self-rewritten) long process name.
+    pub name: String,
+    pub ppid: i32,
+    /// Controlling terminal, e.g. `ttys003`.
+    pub tty: Option<String>,
+}
+
+impl ProcInfo {
+    /// True when either name form marks this as a Claude Code process.
+    ///
+    /// Current Claude Code repaints both to its bare version number
+    /// ("2.1.231"), so this fast path usually misses and identity falls back
+    /// to the executable path — see the call in `scan`.
+    pub fn is_claude(&self) -> bool {
+        self.comm.contains("claude") || self.name.contains("claude")
     }
-    table
+}
+
+/// The executable path behind a pid, via `proc_pidpath`. The kernel answers
+/// from the exec image, so a process that repaints its name can't hide here —
+/// Claude Code's resolves to `…/claude/versions/<x.y.z>`.
+pub fn exe_path(pid: i32) -> Option<String> {
+    let mut buf = vec![0u8; libc::PROC_PIDPATHINFO_MAXSIZE as usize];
+    let n = unsafe { libc::proc_pidpath(pid, buf.as_mut_ptr().cast(), buf.len() as u32) };
+    if n <= 0 {
+        return None;
+    }
+    buf.truncate(n as usize);
+    Some(String::from_utf8_lossy(&buf).into_owned())
+}
+
+pub fn proc_info(pid: i32) -> Option<ProcInfo> {
+    unsafe {
+        let mut info = std::mem::MaybeUninit::<libc::proc_bsdinfo>::uninit();
+        let size = std::mem::size_of::<libc::proc_bsdinfo>() as libc::c_int;
+        let read = libc::proc_pidinfo(
+            pid,
+            libc::PROC_PIDTBSDINFO,
+            0,
+            info.as_mut_ptr().cast(),
+            size,
+        );
+        if read < size {
+            return None; // no such process (or not ours to inspect)
+        }
+        let info = info.assume_init();
+        Some(ProcInfo {
+            comm: c_string(&info.pbi_comm),
+            name: c_string(&info.pbi_name),
+            ppid: info.pbi_ppid as i32,
+            tty: tty_name(info.e_tdev),
+        })
+    }
+}
+
+/// The parent of a pid, for walking up to the terminal app hosting a session.
+pub fn parent_of(pid: i32) -> Option<i32> {
+    proc_info(pid).map(|info| info.ppid)
+}
+
+fn c_string(chars: &[libc::c_char]) -> String {
+    let bytes: Vec<u8> = chars
+        .iter()
+        .take_while(|&&c| c != 0)
+        .map(|&c| c as u8)
+        .collect();
+    String::from_utf8_lossy(&bytes).into_owned()
+}
+
+/// `ttys003` for a controlling terminal device, `None` when there isn't one.
+fn tty_name(tdev: u32) -> Option<String> {
+    if tdev == u32::MAX {
+        return None; // NODEV
+    }
+    unsafe {
+        let name = libc::devname(tdev as libc::dev_t, libc::S_IFCHR);
+        if name.is_null() {
+            return None;
+        }
+        Some(std::ffi::CStr::from_ptr(name).to_string_lossy().into_owned())
+    }
 }
 
 /// Terminal emulators each export their own window handle; we accept any of them.
@@ -87,17 +157,80 @@ const WINDOW_ID_VARS: [&str; 5] = [
     "WINDOWID",
 ];
 
+/// A same-user process's environment via `KERN_PROCARGS2` — the exact strings,
+/// unlike `ps eww` whose whitespace-splitting mangled values with spaces.
+fn proc_env_strings(pid: i32) -> Vec<String> {
+    let raw = unsafe {
+        let mut argmax: libc::c_int = 0;
+        let mut size = std::mem::size_of::<libc::c_int>();
+        let mut mib = [libc::CTL_KERN, libc::KERN_ARGMAX];
+        if libc::sysctl(
+            mib.as_mut_ptr(),
+            2,
+            (&mut argmax as *mut libc::c_int).cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        ) != 0
+        {
+            return Vec::new();
+        }
+        let mut buf = vec![0u8; argmax.max(4096) as usize];
+        let mut size = buf.len();
+        let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid as libc::c_int];
+        if libc::sysctl(
+            mib.as_mut_ptr(),
+            3,
+            buf.as_mut_ptr().cast(),
+            &mut size,
+            std::ptr::null_mut(),
+            0,
+        ) != 0
+        {
+            return Vec::new();
+        }
+        buf.truncate(size);
+        buf
+    };
+
+    // Layout: argc, the exec path (null-terminated, then null padding), argc
+    // argv strings, then the environment strings until an empty one.
+    if raw.len() < 4 {
+        return Vec::new();
+    }
+    let argc = i32::from_ne_bytes([raw[0], raw[1], raw[2], raw[3]]).max(0) as usize;
+    let mut i = 4;
+    while i < raw.len() && raw[i] != 0 {
+        i += 1;
+    }
+    while i < raw.len() && raw[i] == 0 {
+        i += 1;
+    }
+    for _ in 0..argc {
+        while i < raw.len() && raw[i] != 0 {
+            i += 1;
+        }
+        i += 1;
+    }
+    let mut out = Vec::new();
+    while i < raw.len() {
+        let start = i;
+        while i < raw.len() && raw[i] != 0 {
+            i += 1;
+        }
+        if i == start {
+            break;
+        }
+        out.push(String::from_utf8_lossy(&raw[start..i]).into_owned());
+        i += 1;
+    }
+    out
+}
+
 fn proc_env(pid: i32) -> ProcEnv {
     let mut env = ProcEnv::default();
-    let Ok(out) = Command::new("ps")
-        .args(["eww", "-p", &pid.to_string()])
-        .output()
-    else {
-        return env;
-    };
-    let text = String::from_utf8_lossy(&out.stdout);
-    for token in text.split_whitespace() {
-        let Some((key, value)) = token.split_once('=') else {
+    for entry in proc_env_strings(pid) {
+        let Some((key, value)) = entry.split_once('=') else {
             continue;
         };
         if key == "CLAUDE_CODE_DISABLE_TERMINAL_TITLE" {
@@ -187,17 +320,33 @@ fn basename(path: &Path) -> String {
 pub struct Scanner {
     env: HashMap<i32, ProcEnv>,
     transcripts: HashMap<String, Transcript>,
+    /// Registry files that didn't parse the way we expect, per scan. Two
+    /// consecutive counts are kept so a file caught mid-write (unparseable for
+    /// one tick) doesn't read as format drift.
+    errors_now: usize,
+    errors_prev: usize,
 }
 
 impl Scanner {
+    /// Registry files that have looked wrong for two consecutive scans — the
+    /// signal that Claude Code changed its registry format under us.
+    pub fn registry_errors(&self) -> usize {
+        self.errors_now.min(self.errors_prev)
+    }
+
+    /// This scan's count alone, for one-shot tools like `lanyard-doctor`.
+    pub fn registry_errors_raw(&self) -> usize {
+        self.errors_now
+    }
+
     /// Reads the current set of live interactive sessions.
     pub fn scan(&mut self) -> Vec<Session> {
-        let table = process_table();
         let dir = claude_dir().join("sessions");
         let Ok(entries) = std::fs::read_dir(&dir) else {
             return Vec::new();
         };
 
+        let mut errors = 0;
         let mut sessions = Vec::new();
         // Directory enclosing each session's repo, kept to disambiguate collisions.
         let mut enclosing = Vec::new();
@@ -210,22 +359,32 @@ impl Scanner {
                 continue;
             };
             let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw) else {
+                errors += 1;
                 continue;
             };
 
             let pid = value.get("pid").and_then(|v| v.as_i64()).unwrap_or(0) as i32;
             if pid <= 0 {
+                // A registry entry without a usable pid isn't a stale file,
+                // it's a shape we don't understand.
+                errors += 1;
                 continue;
             }
 
             // Guard against both stale files and pid reuse.
-            let Some((tty, comm)) = table.get(&pid) else {
+            let Some(info) = proc_info(pid) else {
                 continue;
             };
-            if !comm.contains("claude") {
+            if !info.is_claude() && !exe_path(pid).is_some_and(|p| p.contains("claude")) {
                 continue;
             }
-            if value.get("kind").and_then(|v| v.as_str()) == Some("background") {
+            // Background agents (`claude --bg`) are excluded by design; the
+            // registry has called them both "background" and "bg" over time.
+            if value
+                .get("kind")
+                .and_then(|v| v.as_str())
+                .is_some_and(|kind| kind != "interactive")
+            {
                 continue;
             }
 
@@ -234,6 +393,10 @@ impl Scanner {
                 .and_then(|v| v.as_str())
                 .unwrap_or_default()
                 .to_string();
+            if session_id.is_empty() {
+                errors += 1;
+                continue;
+            }
             let cwd = value
                 .get("cwd")
                 .and_then(|v| v.as_str())
@@ -275,7 +438,7 @@ impl Scanner {
                     .get("status")
                     .and_then(|v| v.as_str())
                     .map(str::to_string),
-                tty: tty.clone(),
+                tty: info.tty,
                 window_id: env.window_id,
                 title_disabled: env.title_disabled,
                 ai_title,
@@ -284,9 +447,13 @@ impl Scanner {
         }
 
         // Drop cache entries for sessions that have exited.
-        self.env.retain(|pid, _| table.contains_key(pid));
+        self.env
+            .retain(|pid, _| sessions.iter().any(|s| s.pid == *pid));
         self.transcripts
             .retain(|id, _| sessions.iter().any(|s| &s.session_id == id));
+
+        self.errors_prev = self.errors_now;
+        self.errors_now = errors;
 
         // A bare repo name is useless when two checkouts share it — `web-client`
         // says nothing when you have three. Qualify only the ones that collide.
@@ -327,3 +494,31 @@ impl Scanner {
         entry.title.clone()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn proc_info_reads_the_current_process() {
+        let me = std::process::id() as i32;
+        let info = proc_info(me).expect("proc_pidinfo should work on ourselves");
+        assert!(info.ppid > 0);
+        assert!(!info.name.is_empty());
+    }
+
+    #[test]
+    fn proc_env_reads_the_current_process() {
+        // The test runner always carries PATH; finding it proves the
+        // KERN_PROCARGS2 walk lands on the environment block.
+        let me = std::process::id() as i32;
+        let env = proc_env_strings(me);
+        assert!(
+            env.iter().any(|e| e.starts_with("PATH=")),
+            "no PATH in {} strings",
+            env.len()
+        );
+    }
+}
+
+

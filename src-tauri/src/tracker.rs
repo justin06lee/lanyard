@@ -1,8 +1,8 @@
 //! The polling loop that keeps the floater pointed at the right session.
 //!
 //! Two cadences: focus is sampled every `FOCUS_TICK` (a cheap in-process AX
-//! call), while the session registry is re-read once a second (it shells out to
-//! `ps`, so it is the expensive half).
+//! call), while the session registry is re-read once a second — a directory
+//! read plus a few `proc_pidinfo` syscalls, microseconds in total.
 
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
@@ -74,6 +74,9 @@ pub struct Snapshot {
     pub appearance: String,
     /// Sessions still competing with Lanyard for their terminal title.
     pub title_conflicts: usize,
+    /// Registry files that no longer parse the way Lanyard expects — the
+    /// canary for a Claude Code format change.
+    pub registry_errors: usize,
 }
 
 /// Shared state between the tracker thread and the Tauri commands.
@@ -150,18 +153,12 @@ pub fn host_app(pid: i32) -> Option<i32> {
     ancestors(pid).last().copied()
 }
 
-/// Ancestors of a pid, nearest first.
+/// Ancestors of a pid, nearest first, walked via `proc_pidinfo`.
 fn ancestors(pid: i32) -> Vec<i32> {
     let mut out = Vec::new();
     let mut cursor = pid;
     for _ in 0..8 {
-        let Ok(res) = std::process::Command::new("ps")
-            .args(["-o", "ppid=", "-p", &cursor.to_string()])
-            .output()
-        else {
-            break;
-        };
-        let Ok(parent) = String::from_utf8_lossy(&res.stdout).trim().parse::<i32>() else {
+        let Some(parent) = crate::sessions::parent_of(cursor) else {
             break;
         };
         if parent <= 1 {
@@ -338,6 +335,7 @@ fn run(app: AppHandle, state: Arc<State>) {
                 crate::store::Appearance::Light => "light".into(),
             },
             title_conflicts: sessions.iter().filter(|s| !s.title_disabled).count(),
+            registry_errors: scanner.registry_errors(),
         };
 
         if let Ok(mut slot) = state.snapshot.lock() {
