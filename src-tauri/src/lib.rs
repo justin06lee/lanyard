@@ -434,12 +434,24 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            // Closing the panel should park it, not tear down the app.
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                if window.label() == "panel" {
+            if window.label() != "panel" {
+                return;
+            }
+            match event {
+                // Closing the panel should park it, not tear down the app.
+                WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     let _ = window.hide();
                 }
+                // Popover semantics: as an Accessory app, Lanyard never
+                // appears in ⌘-tab, so a de-focused panel would be
+                // unreachable — and, pinned to every Space, it would flash
+                // through Space transitions. Clicking away dismisses it;
+                // the tray and the global hotkey summon it back anywhere.
+                WindowEvent::Focused(false) => {
+                    let _ = window.hide();
+                }
+                _ => {}
             }
         })
         .run(tauri::generate_context!())

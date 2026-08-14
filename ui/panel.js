@@ -47,10 +47,12 @@ function buildRow(session) {
   li.appendChild(pid);
 
   // Single click jumps to the session's terminal (and its Space); the short
-  // delay gives a double-click the chance to mean "rename" instead.
+  // delay gives a double-click the chance to mean "rename" instead. A click
+  // that ends a text selection is copying, not navigating.
   let clickTimer = 0;
   li.addEventListener("click", () => {
     if (editing) return;
+    if (window.getSelection().toString()) return;
     clearTimeout(clickTimer);
     clickTimer = setTimeout(
       () => invoke("raise_session", { pid: session.pid }).catch(() => {}),
