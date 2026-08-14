@@ -11,6 +11,8 @@ const grant = document.getElementById("grant");
 const setup = document.getElementById("setup");
 const setupTitle = document.getElementById("setup-title");
 const setupText = document.getElementById("setup-text");
+const drift = document.getElementById("drift");
+const driftText = document.getElementById("drift-text");
 
 let editing = null; // sessionId currently being renamed
 
@@ -114,6 +116,15 @@ function render(state) {
     setupText.textContent =
       " Lanyard has to keep reclaiming it, which you may notice in Mission Control." +
       " Add this to your shell profile and restart them:";
+  }
+
+  drift.hidden = state.registryErrors === 0;
+  if (state.registryErrors > 0) {
+    const n = state.registryErrors;
+    driftText.textContent =
+      ` ${n} file${n === 1 ? "" : "s"} in ~/.claude/sessions no longer parse` +
+      " the way Lanyard expects — a Claude Code update may have changed the" +
+      " format, and some sessions may be missing here until Lanyard adapts.";
   }
 
   // Never yank the input out from under someone mid-rename.

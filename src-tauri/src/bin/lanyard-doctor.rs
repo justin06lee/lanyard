@@ -23,7 +23,8 @@ fn main() {
     println!("config        : {}", store_path());
     println!();
 
-    let found = sessions::Scanner::default().scan();
+    let mut scanner = sessions::Scanner::default();
+    let found = scanner.scan();
     println!("sessions ({})", found.len());
     if found.is_empty() {
         println!("  none — is Claude Code running interactively?");
@@ -51,6 +52,15 @@ fn main() {
         println!(
             "  {contested} session(s) still rewrite their own title — run \
              scripts/setup-shell.sh"
+        );
+    }
+
+    let drift = scanner.registry_errors_raw();
+    if drift > 0 {
+        println!();
+        println!(
+            "  {drift} registry file(s) in ~/.claude/sessions did not parse the way \
+             Lanyard expects — a Claude Code update may have changed the format"
         );
     }
 
