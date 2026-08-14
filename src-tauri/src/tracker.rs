@@ -6,7 +6,7 @@
 
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -93,6 +93,9 @@ pub struct State {
     pub anchor_pos: Mutex<Option<(f64, f64)>>,
     /// Current pill size in logical points; the UI resizes it to fit the name.
     pub pill_size: Mutex<(f64, f64)>,
+    /// Bumped on every resize request; a running width animation aborts the
+    /// moment it is superseded.
+    pub resize_gen: AtomicU64,
     /// The focused terminal's last known rect, kept so a resize or a drag
     /// release can re-derive placement without waiting for the next AX read.
     pub last_rect: Mutex<Option<ax::FocusedWindow>>,
@@ -107,6 +110,7 @@ impl State {
             drag_offset: Mutex::new((0.0, 0.0)),
             anchor_pos: Mutex::new(None),
             pill_size: Mutex::new((PILL_DEFAULT_W, PILL_H)),
+            resize_gen: AtomicU64::new(0),
             last_rect: Mutex::new(None),
         }
     }
