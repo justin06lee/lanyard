@@ -125,15 +125,17 @@ body.floater {
   outline: none;
 }
 
-/* Switching sessions crossfades the label instead of snapping it. */
+/* Switching sessions morphs the label in — a soft materialise timed to the
+   capsule's width animation — instead of snapping it. */
 .pill .name.swap {
-  animation: swap 220ms var(--ease) backwards;
+  animation: swap 240ms var(--ease) backwards;
 }
 
 @keyframes swap {
   from {
     opacity: 0;
-    transform: translateY(3px);
+    transform: translateY(4px) scale(0.95);
+    filter: blur(3px);
   }
 }
 

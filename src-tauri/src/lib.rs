@@ -66,24 +66,18 @@ fn request_accessibility() -> bool {
     ax::repair_trust()
 }
 
-/// Sizes the pill to its text. The UI measures the rendered name and asks for
-/// exactly that width; the height never changes.
-#[tauri::command]
-fn resize_pill(width: f64, app: AppHandle, state: tauri::State<'_, Arc<State>>) {
-    let width = width.clamp(PILL_MIN_W, PILL_MAX_W).round();
-    {
-        let mut size = state.pill_size.lock().unwrap();
-        if (size.0 - width).abs() < 1.0 {
-            return;
-        }
-        size.0 = width;
-    }
+/// How long a pill width change takes; long enough to read as a morph,
+/// short enough to keep up with rapid session switching.
+const RESIZE_MS: f64 = 160.0;
+
+/// One frame of pill geometry: size, and the anchor-derived position that
+/// goes with it (a centre or right anchor's x depends on the width, so both
+/// must move together or the pill visibly jumps).
+fn apply_pill_frame(app: &AppHandle, state: &Arc<State>, width: f64) {
     let Some(floater) = app.get_webview_window("floater") else {
         return;
     };
     let _ = floater.set_size(LogicalSize::new(width, PILL_H));
-    // Re-place immediately: a centre or right anchor's x depends on the width,
-    // and waiting for the next tick would read as a visible jump.
     let win = state.last_rect.lock().unwrap().clone();
     if let Some(win) = win {
         let anchor = state.config.lock().unwrap().anchor;
@@ -92,6 +86,51 @@ fn resize_pill(width: f64, app: AppHandle, state: tauri::State<'_, Arc<State>>) 
         let (dx, dy) = *state.drag_offset.lock().unwrap();
         let _ = floater.set_position(LogicalPosition::new(pos.0 + dx, pos.1 + dy));
     }
+}
+
+/// Sizes the pill to its text. The UI measures the rendered name and asks for
+/// exactly that width; the height never changes.
+///
+/// The change is animated — the capsule morphs between names instead of
+/// snapping. A newer request bumps the generation and the running animation
+/// yields to it mid-flight.
+#[tauri::command]
+fn resize_pill(
+    width: f64,
+    instant: Option<bool>,
+    app: AppHandle,
+    state: tauri::State<'_, Arc<State>>,
+) {
+    let target = width.clamp(PILL_MIN_W, PILL_MAX_W).round();
+    let start = state.pill_size.lock().unwrap().0;
+    if (start - target).abs() < 1.0 {
+        return;
+    }
+    let gen = state.resize_gen.fetch_add(1, Ordering::SeqCst) + 1;
+    if instant.unwrap_or(false) {
+        // Reduce Motion: one frame, no morph.
+        state.pill_size.lock().unwrap().0 = target;
+        apply_pill_frame(&app, &state, target);
+        return;
+    }
+    let state = state.inner().clone();
+    std::thread::spawn(move || {
+        let began = std::time::Instant::now();
+        loop {
+            if state.resize_gen.load(Ordering::SeqCst) != gen {
+                return; // superseded by a newer name
+            }
+            let t = (began.elapsed().as_secs_f64() * 1000.0 / RESIZE_MS).min(1.0);
+            let eased = t * t * (3.0 - 2.0 * t); // smoothstep
+            let w = start + (target - start) * eased;
+            state.pill_size.lock().unwrap().0 = w;
+            apply_pill_frame(&app, &state, w);
+            if t >= 1.0 {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(16));
+        }
+    });
 }
 
 /// Displaces the floater from its anchor while the user drags it aside.

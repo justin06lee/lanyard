@@ -9,6 +9,9 @@ const measure = document.getElementById("measure");
 /* Must match .pill's horizontal padding in style.css. */
 const PAD = 14;
 
+/* Reduce Motion turns the capsule's width morph into an instant resize. */
+const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
+
 let current = null;
 let editing = false;
 let shownId = null;
@@ -24,7 +27,9 @@ function fit(text) {
   const width = Math.ceil(measure.getBoundingClientRect().width) + PAD * 2;
   if (width !== requestedWidth) {
     requestedWidth = width;
-    invoke("resize_pill", { width }).catch(() => {});
+    invoke("resize_pill", { width, instant: reducedMotion.matches }).catch(
+      () => {},
+    );
   }
 }
 
