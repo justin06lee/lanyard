@@ -10,10 +10,10 @@ cask "lanyard" do
   version "0.2.1"
   sha256 "REPLACE_WITH_DMG_SHA256"
 
-  url "https://github.com/justin06lee/gru/releases/download/v#{version}/Lanyard_#{version}_aarch64.dmg"
+  url "https://github.com/justin06lee/lanyard/releases/download/v#{version}/Lanyard_#{version}_aarch64.dmg"
   name "Lanyard"
   desc "Floating name tags for your Claude Code sessions"
-  homepage "https://github.com/justin06lee/gru"
+  homepage "https://github.com/justin06lee/lanyard"
 
   depends_on macos: ">= :big_sur"
 
