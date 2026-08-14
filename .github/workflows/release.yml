@@ -1,0 +1,46 @@
+name: Release
+
+# Pushing a v* tag builds the DMG and attaches it to a draft GitHub release.
+#
+# Unsigned by default. To ship a signed, notarized build — which also makes
+# macOS remember the Accessibility grant across updates — add these repository
+# secrets and the same workflow signs automatically:
+#   APPLE_CERTIFICATE             base64 of the Developer ID Application .p12
+#   APPLE_CERTIFICATE_PASSWORD    password for that .p12
+#   APPLE_SIGNING_IDENTITY        e.g. "Developer ID Application: Justin Lee (TEAMID)"
+#   APPLE_ID                      Apple ID email for notarization
+#   APPLE_PASSWORD                app-specific password for that Apple ID
+#   APPLE_TEAM_ID                 the developer team id
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: macos-14
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: npm install
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: "Lanyard ${{ github.ref_name }}"
+          releaseDraft: true
+          releaseBody: "Floating name tags for your Claude Code sessions."

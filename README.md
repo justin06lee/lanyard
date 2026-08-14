@@ -7,11 +7,9 @@ looks identical — Claude Code titles them all `✳ Claude Code`. Lanyard puts 
 always-on-top pill over the focused terminal telling you *which* session it is,
 named after its repository and renameable to whatever you like.
 
-```
-                ╭──────────────────╮
-                │   hikmah.chat    │
-                ╰──────────────────╯
-```
+<p align="center">
+  <img src="assets/pill-preview.svg" width="560" alt="The Lanyard pill floating over a terminal" />
+</p>
 
 The pill is deliberately tiny: just the name, set in glass. It's a real
 NSVisualEffectView capsule — liquid glass blurring whatever sits behind it —
@@ -130,9 +128,10 @@ picking the right Desktop easier.
 
 ## Terminal support
 
-Developed against **Alacritty**. The mechanism is emulator-agnostic — it needs
-only OSC title support and AX-visible windows — so Terminal.app, WezTerm, kitty
-and Ghostty should work.
+Developed and verified against **Alacritty**. The mechanism is
+emulator-agnostic — it needs only OSC title support and AX-visible windows — so
+Terminal.app, WezTerm, kitty and Ghostty should work, but those have not been
+exercised end-to-end yet; reports welcome.
 
 One caveat for **tabbed** terminals (iTerm2, Terminal.app, WezTerm): macOS
 exposes a tabbed window as a single AX window, so Lanyard resolves the tab that owns
@@ -141,6 +140,24 @@ distinguished. Alacritty's one-window-per-session model has no such ambiguity.
 
 Window ids are read from whichever of `ALACRITTY_WINDOW_ID`, `KITTY_WINDOW_ID`,
 `WEZTERM_PANE`, `ITERM_SESSION_ID` or `WINDOWID` the emulator exports.
+
+---
+
+## Releases
+
+CI (`.github/workflows/ci.yml`) runs the test suite on every push. Pushing a
+`v*` tag runs `.github/workflows/release.yml`, which builds the DMG and
+attaches it to a draft GitHub release.
+
+Release builds are unsigned unless you add signing secrets to the repository —
+the workflow header lists the six needed (`APPLE_CERTIFICATE`, `APPLE_ID`,
+`APPLE_TEAM_ID`, …). A signed, notarized build is worth the ceremony: macOS
+keys Accessibility grants to a binary's code signature, so signed updates keep
+the grant while unsigned rebuilds lose it every time.
+
+`packaging/homebrew/lanyard.rb` is a ready cask template — copy it into a
+`homebrew-tap` repository and fill in the DMG's sha256 to make the app
+`brew install --cask lanyard`-able.
 
 ---
 
