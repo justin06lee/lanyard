@@ -75,6 +75,7 @@ body {
   color: var(--label);
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+  -webkit-user-select: none;
   user-select: none;
   cursor: default;
 }
@@ -123,6 +124,10 @@ body.floater {
   text-overflow: ellipsis;
   text-shadow: var(--text-glow);
   outline: none;
+  /* The label is a handle, never a selection target — a drag must move the
+     pill, not highlight its text. */
+  -webkit-user-select: none;
+  user-select: none;
 }
 
 /* Switching sessions morphs the label in — a soft materialise timed to the
@@ -151,6 +156,7 @@ body.floater {
   border: none;
   outline: none;
   padding: 0;
+  -webkit-user-select: text;
   user-select: text;
   cursor: text;
   caret-color: var(--accent);
@@ -249,6 +255,7 @@ body.panel::after {
   font-size: 11px;
   color: var(--label);
   background: var(--input-well);
+  -webkit-user-select: text;
   user-select: text;
   cursor: text;
   overflow-x: auto;
@@ -334,6 +341,7 @@ body.panel::after {
 .row .desc,
 .row .pid,
 .notice {
+  -webkit-user-select: text;
   user-select: text;
 }
 

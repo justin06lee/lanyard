@@ -175,6 +175,10 @@ pill.addEventListener("pointerdown", (e) => {
   if (e.button !== 0 || editing) return;
   if (e.target === rename) return;
 
+  // Stop WebKit starting a text selection under the drag; the rename input
+  // is exempted above, so its own selection behaviour is untouched.
+  e.preventDefault();
+
   // Grabbing mid-flight takes over from the spring rather than fighting it.
   if (frame) {
     cancelAnimationFrame(frame);
