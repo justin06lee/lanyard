@@ -1,13 +1,18 @@
+const { statusOf } = window.lanyard;
+
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 const pill = document.getElementById("pill");
+const status = document.getElementById("status");
 const name = document.getElementById("name");
 const rename = document.getElementById("rename");
 const measure = document.getElementById("measure");
 
 /* Must match .pill's horizontal padding in style.css. */
 const PAD = 14;
+/* Dot diameter + the pill's flex gap; must match .pill and .pill .dot. */
+const DOT = 6 + 7;
 
 /* Reduce Motion turns the capsule's width morph into an instant resize. */
 const reducedMotion = matchMedia("(prefers-reduced-motion: reduce)");
@@ -20,11 +25,14 @@ let requestedWidth = 0;
 /* ------------------------------------------------------------------ render */
 
 /* The pill is text-sized: measure the rendered name and ask the window to be
-   exactly that wide. Rust clamps to sane bounds; past the cap, CSS ellipsis
-   takes over. */
-function fit(text) {
+   exactly that wide (plus the status dot when it shows). Rust clamps to sane
+   bounds; past the cap, CSS ellipsis takes over. */
+function fit(text, withDot) {
   measure.textContent = text;
-  const width = Math.ceil(measure.getBoundingClientRect().width) + PAD * 2;
+  const width =
+    Math.ceil(measure.getBoundingClientRect().width) +
+    PAD * 2 +
+    (withDot ? DOT : 0);
   if (width !== requestedWidth) {
     requestedWidth = width;
     invoke("resize_pill", { width, instant: reducedMotion.matches }).catch(
@@ -41,8 +49,14 @@ function render(state) {
 
   if (editing) return;
 
+  // The dot appears only when there is something to say: breathing while
+  // Claude works, orange while it waits on you, absent at rest.
+  const phase = statusOf(session);
+  status.className = `dot ${phase}`;
+  status.hidden = phase === "idle";
+
   name.textContent = session.name;
-  fit(session.name);
+  fit(session.name, !status.hidden);
 
   // Crossfade only when the session actually changed, not on every tick.
   if (session.sessionId !== shownId) {

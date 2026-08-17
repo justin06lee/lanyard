@@ -93,6 +93,7 @@ body.floater {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 7px;
   height: 100%;
   padding: 0 14px;
   border-radius: 15px;
@@ -111,6 +112,13 @@ body.floater {
     inset 0 0 0 1px var(--edge-top),
     inset 0 1px 0 var(--edge-top),
     inset 0 -8px 14px -10px var(--well);
+}
+
+/* The pill's dot is smaller than the panel's — closer to punctuation than
+   ornament at this scale. */
+.pill .dot {
+  width: 6px;
+  height: 6px;
 }
 
 .pill .name {

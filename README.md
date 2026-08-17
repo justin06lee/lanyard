@@ -11,9 +11,11 @@ named after its repository and renameable to whatever you like.
   <img src="assets/pill-preview.svg" width="560" alt="The Lanyard pill floating over a terminal" />
 </p>
 
-The pill is deliberately tiny: just the name, set in glass. It's a real
-NSVisualEffectView capsule — liquid glass blurring whatever sits behind it —
-dark by default, light by configuration, and exactly as wide as its text.
+The pill is deliberately tiny: the name, set in glass — joined by a small dot
+that breathes while Claude works and turns orange while it waits on you, and
+absent when there's nothing to say. It's a real NSVisualEffectView capsule —
+liquid glass blurring whatever sits behind it — dark by default, light by
+configuration, and exactly as wide as its text.
 
 - **Follows you across Desktops.** One floater, pinned to every Space.
 - **Follows focus within a Desktop.** Switch between two terminals on the same
