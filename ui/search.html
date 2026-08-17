@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lanyard — search</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="search">
+    <div class="s-root" id="root">
+      <div class="s-field">
+        <svg viewBox="0 0 20 20" class="s-icon" aria-hidden="true">
+          <circle cx="9" cy="9" r="6" fill="none" stroke="currentColor" stroke-width="1.8" />
+          <path d="M13.5 13.5 L17 17" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" />
+        </svg>
+        <input
+          id="query"
+          placeholder="Find a session…"
+          autocomplete="off"
+          spellcheck="false"
+          aria-label="Find a session"
+        />
+        <kbd class="s-count" id="count" hidden></kbd>
+      </div>
+      <ul class="s-list" id="list"></ul>
+      <p class="s-empty" id="empty" hidden></p>
+    </div>
+    <script src="session.js"></script>
+    <script src="search.js"></script>
+  </body>
+</html>
