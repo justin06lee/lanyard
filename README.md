@@ -76,7 +76,8 @@ Claude Code sessions afterwards.
 When a session flips to *waiting on you*, the menu bar glyph grows a badge dot
 and a notification names the session — so a blocked session on another Desktop
 can't idle unnoticed. Light appearance, notifications, title management and
-start-at-login all toggle from the tray menu.
+start-at-login all toggle from the tray menu, and tray › *Shortcuts* picks
+each hotkey from a handful of presets — no config file required.
 
 The pill only appears when a Claude Code session has focus. Switch to your
 browser and it gets out of the way. The panel behaves like a popover: click
@@ -88,7 +89,8 @@ ones). `"appearance"`: `"dark"` (default) or `"light"`. `"hotkey"`: the panel
 shortcut, `"ctrl+cmd+l"` by default, `""` to disable. `"searchHotkey"`: the
 search shortcut, `"ctrl+cmd+k"` by default. `"waitingHotkey"`: the
 jump-to-waiting shortcut, `"ctrl+cmd+j"` by default. `""` disables any of
-them.
+them, tray › *Shortcuts* covers the common combos, and the config file
+accepts any combo the presets don't offer.
 
 The search palette ranks like you'd hope: with nothing typed, sessions that
 are waiting on you list first; a query fuzzy-matches the session name (matches
