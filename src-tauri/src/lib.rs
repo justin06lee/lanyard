@@ -207,6 +207,42 @@ fn raise_session(pid: i32) -> Result<(), String> {
     ax::raise_window(host, pid)
 }
 
+/// Raises the session that's blocked waiting on you; invoked again, it cycles
+/// through every waiting session in turn. With nothing waiting it says so —
+/// silent no-ops on a global hotkey read as breakage.
+fn raise_waiting(app: &AppHandle, state: &Arc<State>) {
+    let waiting: Vec<i32> = {
+        let snapshot = state.snapshot.lock().unwrap();
+        snapshot
+            .sessions
+            .iter()
+            .filter(|s| s.status.as_deref() == Some("waiting"))
+            .map(|s| s.pid)
+            .collect()
+    };
+    if waiting.is_empty() {
+        let _ = app
+            .notification()
+            .builder()
+            .title("Lanyard")
+            .body("No session is waiting on you.")
+            .show();
+        return;
+    }
+    let next = {
+        let mut last = state.last_waiting.lock().unwrap();
+        let next = match (*last).and_then(|pid| waiting.iter().position(|&p| p == pid)) {
+            Some(i) => waiting[(i + 1) % waiting.len()],
+            None => waiting[0],
+        };
+        *last = Some(next);
+        next
+    };
+    if let Some(host) = tracker::host_app(next) {
+        let _ = ax::raise_window(host, next);
+    }
+}
+
 #[tauri::command]
 fn open_panel(app: AppHandle, state: tauri::State<'_, Arc<State>>) -> Result<(), String> {
     let appearance = state.config.lock().unwrap().appearance;
@@ -451,6 +487,8 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
 
     let panel_item = MenuItem::with_id(app, "panel", "Sessions…", true, None::<&str>)?;
     let search_item = MenuItem::with_id(app, "search", "Find session…", true, None::<&str>)?;
+    let waiting_item =
+        MenuItem::with_id(app, "waiting", "Jump to waiting session", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let show_item =
         CheckMenuItem::with_id(app, "toggle", "Show pill", true, config.enabled, None::<&str>)?;
@@ -490,6 +528,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
         &[
             &panel_item,
             &search_item,
+            &waiting_item,
             &sep1,
             &show_item,
             &light_item,
@@ -533,6 +572,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
             let appearance = state.config.lock().unwrap().appearance;
             let _ = show_search(app, appearance);
         }
+        "waiting" => raise_waiting(app, &state),
         "toggle" => {
             let mut config = state.config.lock().unwrap();
             config.enabled = show_item.is_checked().unwrap_or(!config.enabled);
@@ -617,12 +657,13 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let (appearance, hotkey, search_hotkey) = {
+            let (appearance, hotkey, search_hotkey, waiting_hotkey) = {
                 let config = state.config.lock().unwrap();
                 (
                     config.appearance,
                     config.hotkey.trim().to_string(),
                     config.search_hotkey.trim().to_string(),
+                    config.waiting_hotkey.trim().to_string(),
                 )
             };
             let handle = app.handle().clone();
@@ -657,6 +698,19 @@ pub fn run() {
                     },
                 ) {
                     eprintln!("lanyard: could not register hotkey {search_hotkey:?}: {e}");
+                }
+            }
+            if !waiting_hotkey.is_empty() {
+                let shortcut_state = state.clone();
+                if let Err(e) = app.global_shortcut().on_shortcut(
+                    waiting_hotkey.as_str(),
+                    move |app, _shortcut, event| {
+                        if event.state == ShortcutState::Pressed {
+                            raise_waiting(app, &shortcut_state);
+                        }
+                    },
+                ) {
+                    eprintln!("lanyard: could not register hotkey {waiting_hotkey:?}: {e}");
                 }
             }
 

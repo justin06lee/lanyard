@@ -68,6 +68,7 @@ Claude Code sessions afterwards.
 | See every session | Tray › *Sessions…*, or **⌃⌘L** from anywhere |
 | Find a session | **⌃⌘K** (or tray › *Find session…*) — fuzzy-search by name, repo, directory or what Claude says it's doing; **↵** jumps to it |
 | Jump to a session | Click its row in the panel — its window (and Space) comes to the front |
+| Jump to a *waiting* session | **⌃⌘J** — straight to whichever session is blocked on you; press again to cycle through them |
 | Hide/show the pill | Tray › *Show pill* |
 
 When a session flips to *waiting on you*, the menu bar glyph grows a badge dot
@@ -83,7 +84,9 @@ whatever Space you're on.
 Settings live in `~/.config/lanyard/config.json` (the tray covers the common
 ones). `"appearance"`: `"dark"` (default) or `"light"`. `"hotkey"`: the panel
 shortcut, `"ctrl+cmd+l"` by default, `""` to disable. `"searchHotkey"`: the
-search shortcut, `"ctrl+cmd+k"` by default, `""` to disable.
+search shortcut, `"ctrl+cmd+k"` by default. `"waitingHotkey"`: the
+jump-to-waiting shortcut, `"ctrl+cmd+j"` by default. `""` disables any of
+them.
 
 The search palette ranks like you'd hope: with nothing typed, sessions that
 are waiting on you list first; a query fuzzy-matches the session name (matches

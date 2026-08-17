@@ -99,6 +99,9 @@ pub struct State {
     /// The focused terminal's last known rect, kept so a resize or a drag
     /// release can re-derive placement without waiting for the next AX read.
     pub last_rect: Mutex<Option<ax::FocusedWindow>>,
+    /// The waiting session most recently raised via the jump hotkey, so
+    /// pressing it again cycles onward instead of bouncing on one session.
+    pub last_waiting: Mutex<Option<i32>>,
 }
 
 impl State {
@@ -112,6 +115,7 @@ impl State {
             pill_size: Mutex::new((PILL_DEFAULT_W, PILL_H)),
             resize_gen: AtomicU64::new(0),
             last_rect: Mutex::new(None),
+            last_waiting: Mutex::new(None),
         }
     }
 }
