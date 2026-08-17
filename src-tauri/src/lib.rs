@@ -13,6 +13,8 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
+use tauri_plugin_notification::NotificationExt;
+use tauri_plugin_updater::UpdaterExt;
 use tauri::utils::config::WindowEffectsConfig;
 use tauri::utils::{WindowEffect, WindowEffectState};
 use tauri::{
@@ -290,6 +292,67 @@ fn toggle_panel(app: &AppHandle, appearance: Appearance) {
     let _ = show_panel(app, appearance);
 }
 
+/// Checks the release feed, and — when `interactive` — installs what it finds.
+///
+/// The quiet launch check only retitles the tray item ("Update to vX.Y.Z…"),
+/// so an update is always a deliberate click, never a surprise restart. The
+/// same click re-checks first, which keeps a single code path and costs one
+/// request against a feed we were about to download from anyway.
+fn spawn_update_check(app: AppHandle, item: MenuItem<tauri::Wry>, interactive: bool) {
+    tauri::async_runtime::spawn(async move {
+        let Ok(updater) = app.updater() else { return };
+        match updater.check().await {
+            Ok(Some(update)) => {
+                let _ = item.set_text(format!("Update to v{}…", update.version));
+                if !interactive {
+                    return;
+                }
+                let _ = app
+                    .notification()
+                    .builder()
+                    .title("Lanyard")
+                    .body(format!("Updating to v{}…", update.version))
+                    .show();
+                match update.download_and_install(|_, _| {}, || {}).await {
+                    Ok(()) => app.restart(),
+                    Err(e) => {
+                        let _ = item.set_text("Check for Updates…");
+                        let _ = app
+                            .notification()
+                            .builder()
+                            .title("Lanyard")
+                            .body(format!("Update failed: {e}"))
+                            .show();
+                    }
+                }
+            }
+            Ok(None) => {
+                let _ = item.set_text("Check for Updates…");
+                if interactive {
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title("Lanyard")
+                        .body("Lanyard is up to date.")
+                        .show();
+                }
+            }
+            // Offline is the ordinary failure here; only a clicked check
+            // deserves an explanation.
+            Err(e) => {
+                if interactive {
+                    let _ = app
+                        .notification()
+                        .builder()
+                        .title("Lanyard")
+                        .body(format!("Update check failed: {e}"))
+                        .show();
+                }
+            }
+        }
+    });
+}
+
 fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
     let config = state.config.lock().unwrap().clone();
     let login = app.autolaunch().is_enabled().unwrap_or(false);
@@ -326,6 +389,8 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
         CheckMenuItem::with_id(app, "login", "Start at login", true, login, None::<&str>)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
     let ax_item = MenuItem::with_id(app, "ax", "Accessibility access…", true, None::<&str>)?;
+    let update_item =
+        MenuItem::with_id(app, "update", "Check for Updates…", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Lanyard", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
@@ -339,9 +404,21 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
             &login_item,
             &sep2,
             &ax_item,
+            &update_item,
             &quit_item,
         ],
     )?;
+
+    // Quietly learn about newer releases shortly after launch; a found update
+    // only retitles the menu item and waits for a deliberate click.
+    {
+        let app = app.clone();
+        let item = update_item.clone();
+        std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_secs(10));
+            spawn_update_check(app, item, false);
+        });
+    }
 
     // A template image: macOS ignores the colour and tints the alpha to suit the
     // menu bar, so one black-on-transparent glyph reads in both light and dark.
@@ -401,6 +478,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
         "ax" => {
             ax::repair_trust();
         }
+        "update" => spawn_update_check(app.clone(), update_item.clone(), true),
         "quit" => app.exit(0),
         _ => {}
     })
@@ -414,6 +492,7 @@ pub fn run() {
     let state = Arc::new(State::new(Config::load()));
 
     tauri::Builder::default()
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,

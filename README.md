@@ -153,6 +153,13 @@ CI (`.github/workflows/ci.yml`) runs the test suite on every push. Pushing a
 `v*` tag runs `.github/workflows/release.yml`, which builds the DMG and
 attaches it to a draft GitHub release.
 
+Installed copies keep themselves current. Lanyard checks the latest published
+release shortly after launch; when a newer version exists, the tray's *Check
+for Updates…* item retitles to *Update to vX.Y.Z…* and one click downloads,
+verifies (updater artifacts are minisign-signed in CI with the
+`TAURI_SIGNING_PRIVATE_KEY` secret) and swaps the app in place, then
+relaunches. Publishing a release is all it takes to roll everyone forward.
+
 Release builds are unsigned unless you add signing secrets to the repository —
 the workflow header lists the six needed (`APPLE_CERTIFICATE`, `APPLE_ID`,
 `APPLE_TEAM_ID`, …). A signed, notarized build is worth the ceremony: macOS
