@@ -83,6 +83,10 @@ pub struct Config {
     /// Global shortcut that opens the session search. Empty string disables.
     #[serde(default = "default_search_hotkey")]
     pub search_hotkey: String,
+    /// Global shortcut that jumps to (and cycles through) waiting sessions.
+    /// Empty string disables.
+    #[serde(default = "default_waiting_hotkey")]
+    pub waiting_hotkey: String,
 }
 
 fn default_hotkey() -> String {
@@ -91,6 +95,10 @@ fn default_hotkey() -> String {
 
 fn default_search_hotkey() -> String {
     "ctrl+cmd+k".into()
+}
+
+fn default_waiting_hotkey() -> String {
+    "ctrl+cmd+j".into()
 }
 
 impl Default for Config {
@@ -105,6 +113,7 @@ impl Default for Config {
             notify: true,
             hotkey: default_hotkey(),
             search_hotkey: default_search_hotkey(),
+            waiting_hotkey: default_waiting_hotkey(),
         }
     }
 }
