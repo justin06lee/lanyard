@@ -122,6 +122,12 @@ Space, which is exactly right here: whatever it can see is what you're looking
 at. The floater is marked `visibleOnAllWorkspaces`, so a single window follows
 you across every Desktop instead of one per Space.
 
+Focus changes arrive as events, not polls: Lanyard keeps an `AXObserver` on
+each terminal app hosting a session, so switching windows — or dragging one —
+moves the pill the instant it happens. A slow fallback tick re-reads the
+session registry once a second and covers anything an observer missed; an app
+that refuses observation is simply polled the old way.
+
 Lanyard asks each *terminal app hosting a session* whether it is `AXFrontmost`,
 rather than asking the system for its focused application. The system-wide
 `AXFocusedApplication` query returns `kAXErrorCannotComplete` (-25204) on macOS
