@@ -15,9 +15,18 @@
       "csp": "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:"
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IERDOENGN0IwODg3NjdEMTgKUldRWWZYYUlzUGVNM01TN0w0S0NWNzkwalBKclVobTg0bVpIWXU5bWwxVlZVNWxSZElPeWdnVWcK",
+      "endpoints": [
+        "https://github.com/justin06lee/lanyard/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": ["app", "dmg"],
+    "createUpdaterArtifacts": true,
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
