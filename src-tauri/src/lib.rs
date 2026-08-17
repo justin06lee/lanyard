@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use serde::Serialize;
 use tauri::image::Image;
-use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem};
+use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
@@ -420,6 +420,117 @@ fn toggle_panel(app: &AppHandle, appearance: Appearance) {
     let _ = show_panel(app, appearance);
 }
 
+/// The three global shortcuts, unified so the tray presets and the startup
+/// registration share one code path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HotkeyGroup {
+    Panel,
+    Search,
+    Waiting,
+}
+
+impl HotkeyGroup {
+    fn parse(s: &str) -> Option<Self> {
+        match s {
+            "panel" => Some(Self::Panel),
+            "search" => Some(Self::Search),
+            "waiting" => Some(Self::Waiting),
+            _ => None,
+        }
+    }
+}
+
+/// The current combo for a group, straight from config.
+fn hotkey_of(config: &Config, group: HotkeyGroup) -> String {
+    match group {
+        HotkeyGroup::Panel => config.hotkey.trim().to_string(),
+        HotkeyGroup::Search => config.search_hotkey.trim().to_string(),
+        HotkeyGroup::Waiting => config.waiting_hotkey.trim().to_string(),
+    }
+}
+
+fn set_hotkey_of(config: &mut Config, group: HotkeyGroup, keys: &str) {
+    let keys = keys.to_string();
+    match group {
+        HotkeyGroup::Panel => config.hotkey = keys,
+        HotkeyGroup::Search => config.search_hotkey = keys,
+        HotkeyGroup::Waiting => config.waiting_hotkey = keys,
+    }
+}
+
+/// Registers `keys` to its group's action. An unparseable or taken shortcut
+/// costs that hotkey, never the app.
+fn register_hotkey_action(
+    app: &AppHandle,
+    state: &Arc<State>,
+    group: HotkeyGroup,
+    keys: &str,
+) -> Result<(), String> {
+    let shortcut_state = state.clone();
+    app.global_shortcut()
+        .on_shortcut(keys, move |app, _shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            match group {
+                HotkeyGroup::Panel => {
+                    let appearance = shortcut_state.config.lock().unwrap().appearance;
+                    toggle_panel(app, appearance);
+                }
+                HotkeyGroup::Search => {
+                    let appearance = shortcut_state.config.lock().unwrap().appearance;
+                    toggle_search(app, appearance);
+                }
+                HotkeyGroup::Waiting => raise_waiting(app, &shortcut_state),
+            }
+        })
+        .map_err(|e| e.to_string())
+}
+
+/// One selectable preset row: its group, the combo it stands for ("" is
+/// Disabled), and the check item that displays it.
+type HotkeyPreset = (HotkeyGroup, String, CheckMenuItem<tauri::Wry>);
+
+/// Applies a preset picked from the tray: swap the registration, persist, and
+/// reconcile every check mark in the group from what config now says.
+fn choose_hotkey(app: &AppHandle, state: &Arc<State>, choice: &str, presets: &[HotkeyPreset]) {
+    let Some((group_str, keys)) = choice.split_once(':') else {
+        return;
+    };
+    let Some(group) = HotkeyGroup::parse(group_str) else {
+        return;
+    };
+
+    let old = hotkey_of(&state.config.lock().unwrap(), group);
+    if keys != old {
+        if !old.is_empty() {
+            let _ = app.global_shortcut().unregister(old.as_str());
+        }
+        let registered = keys.is_empty() || register_hotkey_action(app, state, group, keys).is_ok();
+        if registered {
+            let mut config = state.config.lock().unwrap();
+            set_hotkey_of(&mut config, group, keys);
+            let _ = config.save();
+        } else {
+            // The combo is taken (or invalid): put the old one back and say so.
+            let _ = register_hotkey_action(app, state, group, &old);
+            let _ = app
+                .notification()
+                .builder()
+                .title("Lanyard")
+                .body(format!("Couldn't grab {keys} — another app may own it."))
+                .show();
+        }
+    }
+
+    let current = hotkey_of(&state.config.lock().unwrap(), group);
+    for (preset_group, preset_keys, item) in presets {
+        if *preset_group == group {
+            let _ = item.set_checked(*preset_keys == current);
+        }
+    }
+}
+
 /// Checks the release feed, and — when `interactive` — installs what it finds.
 ///
 /// The quiet launch check only retitles the tray item ("Update to vX.Y.Z…"),
@@ -518,6 +629,68 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
     )?;
     let login_item =
         CheckMenuItem::with_id(app, "login", "Start at login", true, login, None::<&str>)?;
+
+    // Shortcut presets: one submenu per hotkey, check-marked from config.
+    // Any other combo can still be set in config.json; it simply shows as no
+    // preset being checked.
+    let preset_table: [(HotkeyGroup, &str, &[(&str, &str)]); 3] = [
+        (
+            HotkeyGroup::Panel,
+            "Panel shortcut",
+            &[
+                ("⌃⌘L", "ctrl+cmd+l"),
+                ("⌥⌘L", "alt+cmd+l"),
+                ("⌃⌘P", "ctrl+cmd+p"),
+                ("Disabled", ""),
+            ],
+        ),
+        (
+            HotkeyGroup::Search,
+            "Find session shortcut",
+            &[
+                ("⌃⌘K", "ctrl+cmd+k"),
+                ("⌥⌘K", "alt+cmd+k"),
+                ("⌥Space", "alt+space"),
+                ("Disabled", ""),
+            ],
+        ),
+        (
+            HotkeyGroup::Waiting,
+            "Waiting session shortcut",
+            &[
+                ("⌃⌘J", "ctrl+cmd+j"),
+                ("⌥⌘J", "alt+cmd+j"),
+                ("Disabled", ""),
+            ],
+        ),
+    ];
+    let mut presets: Vec<HotkeyPreset> = Vec::new();
+    let mut group_menus = Vec::new();
+    for (group, title, rows) in preset_table {
+        let current = hotkey_of(&config, group);
+        let mut items = Vec::new();
+        for (label, keys) in rows {
+            let id = format!(
+                "hk:{}:{keys}",
+                match group {
+                    HotkeyGroup::Panel => "panel",
+                    HotkeyGroup::Search => "search",
+                    HotkeyGroup::Waiting => "waiting",
+                }
+            );
+            let item =
+                CheckMenuItem::with_id(app, id, *label, true, *keys == current, None::<&str>)?;
+            presets.push((group, keys.to_string(), item.clone()));
+            items.push(item);
+        }
+        let refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+            items.iter().map(|i| i as _).collect();
+        group_menus.push(Submenu::with_items(app, title, true, &refs)?);
+    }
+    let shortcut_refs: Vec<&dyn tauri::menu::IsMenuItem<tauri::Wry>> =
+        group_menus.iter().map(|m| m as _).collect();
+    let shortcuts_menu = Submenu::with_items(app, "Shortcuts", true, &shortcut_refs)?;
+
     let sep2 = PredefinedMenuItem::separator(app)?;
     let ax_item = MenuItem::with_id(app, "ax", "Accessibility access…", true, None::<&str>)?;
     let update_item =
@@ -535,6 +708,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
             &notify_item,
             &titles_item,
             &login_item,
+            &shortcuts_menu,
             &sep2,
             &ax_item,
             &update_item,
@@ -618,7 +792,11 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
         }
         "update" => spawn_update_check(app.clone(), update_item.clone(), true),
         "quit" => app.exit(0),
-        _ => {}
+        other => {
+            if let Some(choice) = other.strip_prefix("hk:") {
+                choose_hotkey(app, &state, choice, &presets);
+            }
+        }
     })
     .build(app)?;
 
@@ -657,60 +835,20 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let (appearance, hotkey, search_hotkey, waiting_hotkey) = {
-                let config = state.config.lock().unwrap();
-                (
-                    config.appearance,
-                    config.hotkey.trim().to_string(),
-                    config.search_hotkey.trim().to_string(),
-                    config.waiting_hotkey.trim().to_string(),
-                )
-            };
+            let appearance = state.config.lock().unwrap().appearance;
             let handle = app.handle().clone();
             build_floater(&handle, appearance)?;
             build_tray(&handle, state.clone())?;
 
-            // The panel and the search from anywhere, hands on the keyboard.
-            // An unparseable or taken shortcut costs that hotkey, never the app.
-            if !hotkey.is_empty() {
-                let shortcut_state = state.clone();
-                if let Err(e) = app.global_shortcut().on_shortcut(
-                    hotkey.as_str(),
-                    move |app, _shortcut, event| {
-                        if event.state == ShortcutState::Pressed {
-                            let appearance = shortcut_state.config.lock().unwrap().appearance;
-                            toggle_panel(app, appearance);
-                        }
-                    },
-                ) {
-                    eprintln!("lanyard: could not register hotkey {hotkey:?}: {e}");
+            // The panel, the search and the waiting-jump from anywhere, hands
+            // on the keyboard.
+            for group in [HotkeyGroup::Panel, HotkeyGroup::Search, HotkeyGroup::Waiting] {
+                let keys = hotkey_of(&state.config.lock().unwrap(), group);
+                if keys.is_empty() {
+                    continue;
                 }
-            }
-            if !search_hotkey.is_empty() {
-                let shortcut_state = state.clone();
-                if let Err(e) = app.global_shortcut().on_shortcut(
-                    search_hotkey.as_str(),
-                    move |app, _shortcut, event| {
-                        if event.state == ShortcutState::Pressed {
-                            let appearance = shortcut_state.config.lock().unwrap().appearance;
-                            toggle_search(app, appearance);
-                        }
-                    },
-                ) {
-                    eprintln!("lanyard: could not register hotkey {search_hotkey:?}: {e}");
-                }
-            }
-            if !waiting_hotkey.is_empty() {
-                let shortcut_state = state.clone();
-                if let Err(e) = app.global_shortcut().on_shortcut(
-                    waiting_hotkey.as_str(),
-                    move |app, _shortcut, event| {
-                        if event.state == ShortcutState::Pressed {
-                            raise_waiting(app, &shortcut_state);
-                        }
-                    },
-                ) {
-                    eprintln!("lanyard: could not register hotkey {waiting_hotkey:?}: {e}");
+                if let Err(e) = register_hotkey_action(&handle, &state, group, &keys) {
+                    eprintln!("lanyard: could not register hotkey {keys:?}: {e}");
                 }
             }
 
