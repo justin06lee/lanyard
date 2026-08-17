@@ -1,12 +1,17 @@
-//! The polling loop that keeps the floater pointed at the right session.
+//! The loop that keeps the floater pointed at the right session.
 //!
-//! Two cadences: focus is sampled every `FOCUS_TICK` (a cheap in-process AX
-//! call), while the session registry is re-read once a second — a directory
-//! read plus a few `proc_pidinfo` syscalls, microseconds in total.
+//! Event-driven where it can be: an AXObserver on each terminal app wakes the
+//! loop the instant focus, geometry or titles change, so switching windows or
+//! dragging a terminal moves the pill immediately. Behind the events sits a
+//! slow fallback tick (`FALLBACK_TICK`) that re-reads the session registry —
+//! a directory read plus a few `proc_pidinfo` syscalls, microseconds in
+//! total — and catches anything an observer missed. Apps that refuse an
+//! observer are covered by polling at the old `DEGRADED_TICK` rate instead.
 
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -22,7 +27,13 @@ use crate::title;
 const TRAY_ICON: &[u8] = include_bytes!("../icons/tray.png");
 const TRAY_ALERT: &[u8] = include_bytes!("../icons/tray-alert.png");
 
-const FOCUS_TICK: Duration = Duration::from_millis(200);
+/// The safety net behind the AX observers: how long the loop sleeps when no
+/// event arrives. Also the registry-rescan cadence, so session status stays
+/// fresh within a second either way.
+const FALLBACK_TICK: Duration = Duration::from_millis(1000);
+/// The poll rate when some terminal app couldn't be observed — the pre-event
+/// behaviour, kept so focus tracking never visibly degrades.
+const DEGRADED_TICK: Duration = Duration::from_millis(200);
 const RESCAN_EVERY: Duration = Duration::from_millis(1000);
 /// Sessions started without `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` keep rewriting
 /// their own title, so Lanyard has to re-stamp. Throttle that tug-of-war.
@@ -211,6 +222,12 @@ fn run(app: AppHandle, state: Arc<State>) {
     let mut last_restamp = Instant::now() - RESTAMP_COOLDOWN;
     let mut last_heartbeat = Instant::now() - STAMP_HEARTBEAT;
 
+    // AX events land here; the loop sleeps on this channel instead of a timer.
+    let (wake_tx, wake_rx) = mpsc::channel::<()>();
+    ax::install_wake_sender(wake_tx);
+    // The terminal-app set the observers were last synced to.
+    let mut synced_pids: HashSet<i32> = HashSet::new();
+
     let mut sessions: Vec<Session> = Vec::new();
     let mut last_scan = Instant::now() - RESCAN_EVERY;
     let mut last_focused_pid: Option<i32> = None;
@@ -280,6 +297,14 @@ fn run(app: AppHandle, state: Arc<State>) {
             .iter()
             .filter_map(|s| *ancestor_cache.entry(s.pid).or_insert_with(|| host_app(s.pid)))
             .collect();
+
+        // Keep an AXObserver on each of them. Observers are main-thread
+        // objects, so reconciliation happens over there.
+        if trusted && terminal_pids != synced_pids {
+            synced_pids = terminal_pids.clone();
+            let pids: Vec<i32> = terminal_pids.iter().copied().collect();
+            let _ = app.run_on_main_thread(move || ax::sync_observers(&pids));
+        }
 
         // Lanyard's own window counts as "still on this session" so that clicking
         // the floater to rename doesn't read as focus leaving the terminal.
@@ -385,7 +410,20 @@ fn run(app: AppHandle, state: Arc<State>) {
             }
         }
 
-        std::thread::sleep(FOCUS_TICK);
+        // Sleep until an AX event wakes us or the fallback elapses. Whole
+        // bursts (a window drag streams move events) coalesce into one
+        // resolution per pass. While any terminal app lacks an observer,
+        // poll at the old rate so tracking never visibly degrades.
+        let observed = ax::observed_pids();
+        let all_observed = terminal_pids.iter().all(|pid| observed.contains(pid));
+        let timeout = if trusted && all_observed {
+            FALLBACK_TICK
+        } else {
+            DEGRADED_TICK
+        };
+        if wake_rx.recv_timeout(timeout).is_ok() {
+            while wake_rx.try_recv().is_ok() {}
+        }
     }
 }
 

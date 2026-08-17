@@ -9,12 +9,18 @@
 //! the semantics we want: whatever desktop the user is looking at.
 
 use accessibility_sys::{
-    kAXErrorSuccess, kAXFocusedApplicationAttribute, kAXFocusedWindowAttribute,
+    kAXApplicationActivatedNotification, kAXApplicationDeactivatedNotification,
+    kAXApplicationHiddenNotification, kAXApplicationShownNotification, kAXErrorSuccess,
+    kAXFocusedApplicationAttribute, kAXFocusedWindowAttribute, kAXFocusedWindowChangedNotification,
     kAXFrontmostAttribute, kAXMainAttribute, kAXPositionAttribute, kAXRaiseAction,
-    kAXSizeAttribute, kAXTitleAttribute, kAXTrustedCheckOptionPrompt, kAXValueTypeCGPoint,
-    kAXValueTypeCGSize, kAXWindowsAttribute, AXIsProcessTrusted, AXIsProcessTrustedWithOptions,
-    AXUIElementCopyAttributeValue, AXUIElementCreateApplication, AXUIElementCreateSystemWide,
-    AXUIElementGetPid, AXUIElementPerformAction, AXUIElementRef, AXUIElementSetAttributeValue,
+    kAXSizeAttribute, kAXTitleAttribute, kAXTitleChangedNotification,
+    kAXTrustedCheckOptionPrompt, kAXValueTypeCGPoint, kAXValueTypeCGSize,
+    kAXWindowDeminiaturizedNotification, kAXWindowMiniaturizedNotification,
+    kAXWindowMovedNotification, kAXWindowResizedNotification, kAXWindowsAttribute,
+    AXIsProcessTrusted, AXIsProcessTrustedWithOptions, AXObserverAddNotification,
+    AXObserverCreate, AXObserverGetRunLoopSource, AXObserverRef, AXUIElementCopyAttributeValue,
+    AXUIElementCreateApplication, AXUIElementCreateSystemWide, AXUIElementGetPid,
+    AXUIElementPerformAction, AXUIElementRef, AXUIElementSetAttributeValue,
     AXUIElementSetMessagingTimeout, AXValueGetValue, AXValueRef,
 };
 use core_foundation::base::{CFGetTypeID, CFRelease, CFTypeRef, TCFType};
@@ -22,7 +28,14 @@ use core_foundation::boolean::CFBoolean;
 use core_foundation::dictionary::CFDictionary;
 use core_foundation::string::{CFString, CFStringRef};
 use core_foundation_sys::array::{CFArrayGetCount, CFArrayGetValueAtIndex};
+use core_foundation_sys::runloop::{
+    kCFRunLoopCommonModes, CFRunLoopAddSource, CFRunLoopGetMain, CFRunLoopRemoveSource,
+};
+use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::os::raw::c_void;
+use std::sync::mpsc::Sender;
+use std::sync::{Mutex, OnceLock};
 
 #[repr(C)]
 #[derive(Clone, Copy, Default)]
@@ -262,6 +275,144 @@ pub fn raise_window(app_pid: i32, session_pid: i32) -> Result<(), String> {
         }
         Err("no window carries this session's title tag".into())
     }
+}
+
+// ---------------------------------------------------------------- observers
+//
+// One AXObserver per terminal app, so focus changes arrive as events instead
+// of being polled for. Every notification funnels into a single wake channel;
+// the tracker doesn't care *what* changed, only that its picture is stale.
+
+/// Everything worth waking for: which app is active, which window has focus,
+/// where that window is, and what its title says (the identity channel).
+const OBSERVED_NOTIFICATIONS: [&str; 9] = [
+    kAXApplicationActivatedNotification,
+    kAXApplicationDeactivatedNotification,
+    kAXApplicationHiddenNotification,
+    kAXApplicationShownNotification,
+    kAXFocusedWindowChangedNotification,
+    kAXWindowMovedNotification,
+    kAXWindowResizedNotification,
+    kAXWindowMiniaturizedNotification,
+    kAXWindowDeminiaturizedNotification,
+];
+
+static WAKE: OnceLock<Sender<()>> = OnceLock::new();
+
+/// Pids that currently have a live observer, readable from any thread — the
+/// tracker uses it to decide whether it can trust events or must keep polling.
+fn observed() -> &'static Mutex<HashSet<i32>> {
+    static SET: OnceLock<Mutex<HashSet<i32>>> = OnceLock::new();
+    SET.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+pub fn observed_pids() -> HashSet<i32> {
+    observed().lock().unwrap().clone()
+}
+
+/// Wires the channel the observers wake. Call once, before any observer exists.
+pub fn install_wake_sender(tx: Sender<()>) {
+    let _ = WAKE.set(tx);
+}
+
+/// AXObserverRefs are main-thread objects; they live in a main-thread-only
+/// thread_local and never cross threads.
+struct Observer {
+    observer: AXObserverRef,
+    element: AXUIElementRef,
+}
+
+thread_local! {
+    static OBSERVERS: RefCell<HashMap<i32, Observer>> = RefCell::new(HashMap::new());
+}
+
+unsafe extern "C" fn on_ax_event(
+    _observer: AXObserverRef,
+    _element: AXUIElementRef,
+    _notification: CFStringRef,
+    _refcon: *mut c_void,
+) {
+    if let Some(tx) = WAKE.get() {
+        let _ = tx.send(());
+    }
+}
+
+unsafe fn add_observer(pid: i32) -> Option<Observer> {
+    let mut observer: AXObserverRef = std::ptr::null_mut();
+    if AXObserverCreate(pid, on_ax_event, &mut observer) != kAXErrorSuccess || observer.is_null() {
+        return None;
+    }
+    let element = AXUIElementCreateApplication(pid as libc::pid_t);
+    if element.is_null() {
+        CFRelease(observer as CFTypeRef);
+        return None;
+    }
+    // Registering on the application element covers its windows too. Title
+    // changes are asked for but not required — some apps never deliver them,
+    // and the tracker's fallback tick covers that gap.
+    let mut essential = 0;
+    for name in OBSERVED_NOTIFICATIONS {
+        let cf = CFString::new(name);
+        if AXObserverAddNotification(observer, element, cf.as_concrete_TypeRef(), std::ptr::null_mut())
+            == kAXErrorSuccess
+        {
+            essential += 1;
+        }
+    }
+    let title = CFString::new(kAXTitleChangedNotification);
+    let _ = AXObserverAddNotification(
+        observer,
+        element,
+        title.as_concrete_TypeRef(),
+        std::ptr::null_mut(),
+    );
+    if essential == 0 {
+        CFRelease(element as CFTypeRef);
+        CFRelease(observer as CFTypeRef);
+        return None;
+    }
+    CFRunLoopAddSource(
+        CFRunLoopGetMain(),
+        AXObserverGetRunLoopSource(observer),
+        kCFRunLoopCommonModes,
+    );
+    Some(Observer { observer, element })
+}
+
+unsafe fn remove_observer(entry: &Observer) {
+    CFRunLoopRemoveSource(
+        CFRunLoopGetMain(),
+        AXObserverGetRunLoopSource(entry.observer),
+        kCFRunLoopCommonModes,
+    );
+    CFRelease(entry.element as CFTypeRef);
+    CFRelease(entry.observer as CFTypeRef);
+}
+
+/// Reconciles the observer set with the terminal apps hosting sessions.
+/// Main thread only — dispatch here via `run_on_main_thread`.
+pub fn sync_observers(pids: &[i32]) {
+    let want: HashSet<i32> = pids.iter().copied().collect();
+    OBSERVERS.with(|cell| {
+        let mut map = cell.borrow_mut();
+        map.retain(|pid, entry| {
+            if want.contains(pid) {
+                true
+            } else {
+                unsafe { remove_observer(entry) };
+                false
+            }
+        });
+        for &pid in &want {
+            if map.contains_key(&pid) {
+                continue;
+            }
+            if let Some(entry) = unsafe { add_observer(pid) } {
+                map.insert(pid, entry);
+            }
+        }
+        *observed().lock().unwrap() = map.keys().copied().collect();
+    });
 }
 
 unsafe fn attr_bool(element: AXUIElementRef, attribute: &str) -> Option<bool> {
