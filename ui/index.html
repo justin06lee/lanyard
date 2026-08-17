@@ -7,6 +7,7 @@
   </head>
   <body class="floater">
     <div class="pill" id="pill">
+      <span class="dot" id="status" hidden></span>
       <span class="name" id="name" title="Double-click to rename · drag to move">—</span>
       <input
         class="rename"
@@ -19,6 +20,7 @@
     </div>
     <!-- Off-screen twin of .name; used to measure the width the pill should be. -->
     <span class="measure" id="measure" aria-hidden="true"></span>
+    <script src="session.js"></script>
     <script src="floater.js"></script>
   </body>
 </html>
