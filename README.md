@@ -25,6 +25,9 @@ dark by default, light by configuration, and exactly as wide as its text.
   and remembers.
 - Everything else — Claude's own one-line summary of each session, live
   busy/idle/waiting status — lives in the Sessions panel, one tray click away.
+- **Any session is a keystroke away.** ⌃⌘K summons a Spotlight-style search
+  over your sessions; type a few letters, hit ↵, and its window (and Space)
+  comes to the front.
 
 ---
 
@@ -63,6 +66,7 @@ Claude Code sessions afterwards.
 | Reset to the repo name | Rename it to an empty string |
 | Move the pill | Drag or flick it — it locks to the nearest of six positions and remembers |
 | See every session | Tray › *Sessions…*, or **⌃⌘L** from anywhere |
+| Find a session | **⌃⌘K** (or tray › *Find session…*) — fuzzy-search by name, repo, directory or what Claude says it's doing; **↵** jumps to it |
 | Jump to a session | Click its row in the panel — its window (and Space) comes to the front |
 | Hide/show the pill | Tray › *Show pill* |
 
@@ -78,7 +82,14 @@ whatever Space you're on.
 
 Settings live in `~/.config/lanyard/config.json` (the tray covers the common
 ones). `"appearance"`: `"dark"` (default) or `"light"`. `"hotkey"`: the panel
-shortcut, `"ctrl+cmd+l"` by default, `""` to disable.
+shortcut, `"ctrl+cmd+l"` by default, `""` to disable. `"searchHotkey"`: the
+search shortcut, `"ctrl+cmd+k"` by default, `""` to disable.
+
+The search palette ranks like you'd hope: with nothing typed, sessions that
+are waiting on you list first; a query fuzzy-matches the session name (matches
+highlighted), falling back to the repo path, Claude's own summary of the work,
+and the working directory — so `ju de` finds `justin06lee.dev`, and typing
+what a session is *doing* finds it too.
 
 ---
 

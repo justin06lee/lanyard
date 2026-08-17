@@ -80,10 +80,17 @@ pub struct Config {
     /// Global shortcut that opens the sessions panel. Empty string disables.
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
+    /// Global shortcut that opens the session search. Empty string disables.
+    #[serde(default = "default_search_hotkey")]
+    pub search_hotkey: String,
 }
 
 fn default_hotkey() -> String {
     "ctrl+cmd+l".into()
+}
+
+fn default_search_hotkey() -> String {
+    "ctrl+cmd+k".into()
 }
 
 impl Default for Config {
@@ -97,6 +104,7 @@ impl Default for Config {
             appearance: default_appearance(),
             notify: true,
             hotkey: default_hotkey(),
+            search_hotkey: default_search_hotkey(),
         }
     }
 }

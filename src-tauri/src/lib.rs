@@ -18,8 +18,8 @@ use tauri_plugin_updater::UpdaterExt;
 use tauri::utils::config::WindowEffectsConfig;
 use tauri::utils::{WindowEffect, WindowEffectState};
 use tauri::{
-    AppHandle, LogicalPosition, LogicalSize, Manager, Theme, WebviewUrl, WebviewWindowBuilder,
-    WindowEvent,
+    AppHandle, Emitter, LogicalPosition, LogicalSize, Manager, Theme, WebviewUrl,
+    WebviewWindowBuilder, WindowEvent,
 };
 
 use store::{Appearance, Config};
@@ -213,6 +213,98 @@ fn open_panel(app: AppHandle, state: tauri::State<'_, Arc<State>>) -> Result<(),
     show_panel(&app, appearance).map_err(|e| e.to_string())
 }
 
+/// Search palette geometry. Width is fixed; height follows the content (the
+/// UI measures itself and asks, the same contract the pill uses for width).
+const SEARCH_W: f64 = 520.0;
+const SEARCH_MIN_H: f64 = 52.0;
+const SEARCH_MAX_H: f64 = 480.0;
+/// Fraction of the screen height the palette sits below the top edge.
+const SEARCH_TOP_RATIO: f64 = 0.22;
+
+#[tauri::command]
+fn hide_search(app: AppHandle) {
+    if let Some(win) = app.get_webview_window("search") {
+        let _ = win.hide();
+    }
+}
+
+#[tauri::command]
+fn resize_search(height: f64, app: AppHandle) {
+    if let Some(win) = app.get_webview_window("search") {
+        let _ = win.set_size(LogicalSize::new(
+            SEARCH_W,
+            height.clamp(SEARCH_MIN_H, SEARCH_MAX_H),
+        ));
+    }
+}
+
+fn build_search(app: &AppHandle, appearance: Appearance) -> tauri::Result<tauri::WebviewWindow> {
+    let win = WebviewWindowBuilder::new(app, "search", WebviewUrl::App("search.html".into()))
+        .title("Lanyard — search")
+        .inner_size(SEARCH_W, SEARCH_MIN_H)
+        .decorations(false)
+        .transparent(true)
+        .always_on_top(true)
+        .skip_taskbar(true)
+        .resizable(false)
+        .shadow(true)
+        .visible(false)
+        .accept_first_mouse(true)
+        .theme(Some(theme_of(appearance)))
+        // The pill's glass, at palette scale: the same Popover material,
+        // rounded to match the sheet the CSS draws on top of it.
+        .effects(WindowEffectsConfig {
+            effects: vec![WindowEffect::Popover],
+            state: Some(WindowEffectState::Active),
+            radius: Some(16.0),
+            color: None,
+        })
+        .build()?;
+    // Summonable on whatever Space you're on, like the panel.
+    win.set_visible_on_all_workspaces(true)?;
+    Ok(win)
+}
+
+/// Centres the palette on whichever display holds the cursor, Spotlight-high,
+/// so it appears where the user is looking rather than on the primary screen.
+fn position_search(app: &AppHandle, win: &tauri::WebviewWindow) {
+    let monitor = app
+        .cursor_position()
+        .ok()
+        .and_then(|p| app.monitor_from_point(p.x, p.y).ok().flatten())
+        .or_else(|| app.primary_monitor().ok().flatten());
+    let Some(monitor) = monitor else { return };
+    let scale = monitor.scale_factor();
+    let m_pos = monitor.position().to_logical::<f64>(scale);
+    let m_size = monitor.size().to_logical::<f64>(scale);
+    let x = m_pos.x + (m_size.width - SEARCH_W) / 2.0;
+    let y = m_pos.y + m_size.height * SEARCH_TOP_RATIO;
+    let _ = win.set_position(LogicalPosition::new(x.round(), y.round()));
+}
+
+fn show_search(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
+    let win = match app.get_webview_window("search") {
+        Some(win) => win,
+        None => build_search(app, appearance)?,
+    };
+    // Reset before it becomes visible, so the previous query never flashes.
+    let _ = app.emit_to("search", "lanyard://search-open", ());
+    position_search(app, &win);
+    win.show()?;
+    win.set_focus()?;
+    Ok(())
+}
+
+fn toggle_search(app: &AppHandle, appearance: Appearance) {
+    if let Some(win) = app.get_webview_window("search") {
+        if win.is_visible().unwrap_or(false) {
+            let _ = win.hide();
+            return;
+        }
+    }
+    let _ = show_search(app, appearance);
+}
+
 fn show_panel(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
     if let Some(panel) = app.get_webview_window("panel") {
         panel.show()?;
@@ -275,7 +367,7 @@ fn build_floater(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
 /// Applies the configured theme to every window; the webviews re-skin
 /// themselves when the next snapshot carries the new appearance.
 fn apply_theme(app: &AppHandle, appearance: Appearance) {
-    for label in ["floater", "panel"] {
+    for label in ["floater", "panel", "search"] {
         if let Some(window) = app.get_webview_window(label) {
             let _ = window.set_theme(Some(theme_of(appearance)));
         }
@@ -316,7 +408,7 @@ fn spawn_update_check(app: AppHandle, item: MenuItem<tauri::Wry>, interactive: b
                 match update.download_and_install(|_, _| {}, || {}).await {
                     Ok(()) => app.restart(),
                     Err(e) => {
-                        let _ = item.set_text("Check for Updates…");
+                        let _ = item.set_text("Check for updates…");
                         let _ = app
                             .notification()
                             .builder()
@@ -327,7 +419,7 @@ fn spawn_update_check(app: AppHandle, item: MenuItem<tauri::Wry>, interactive: b
                 }
             }
             Ok(None) => {
-                let _ = item.set_text("Check for Updates…");
+                let _ = item.set_text("Check for updates…");
                 if interactive {
                     let _ = app
                         .notification()
@@ -358,6 +450,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
     let login = app.autolaunch().is_enabled().unwrap_or(false);
 
     let panel_item = MenuItem::with_id(app, "panel", "Sessions…", true, None::<&str>)?;
+    let search_item = MenuItem::with_id(app, "search", "Find session…", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let show_item =
         CheckMenuItem::with_id(app, "toggle", "Show pill", true, config.enabled, None::<&str>)?;
@@ -390,12 +483,13 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
     let sep2 = PredefinedMenuItem::separator(app)?;
     let ax_item = MenuItem::with_id(app, "ax", "Accessibility access…", true, None::<&str>)?;
     let update_item =
-        MenuItem::with_id(app, "update", "Check for Updates…", true, None::<&str>)?;
+        MenuItem::with_id(app, "update", "Check for updates…", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Lanyard", true, None::<&str>)?;
     let menu = Menu::with_items(
         app,
         &[
             &panel_item,
+            &search_item,
             &sep1,
             &show_item,
             &light_item,
@@ -434,6 +528,10 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
         "panel" => {
             let appearance = state.config.lock().unwrap().appearance;
             let _ = show_panel(app, appearance);
+        }
+        "search" => {
+            let appearance = state.config.lock().unwrap().appearance;
+            let _ = show_search(app, appearance);
         }
         "toggle" => {
             let mut config = state.config.lock().unwrap();
@@ -510,23 +608,29 @@ pub fn run() {
             commit_drag,
             focus_floater,
             raise_session,
-            open_panel
+            open_panel,
+            hide_search,
+            resize_search
         ])
         .setup(move |app| {
             // Menu-bar app: no Dock icon, and showing the floater never steals focus.
             #[cfg(target_os = "macos")]
             app.set_activation_policy(tauri::ActivationPolicy::Accessory);
 
-            let (appearance, hotkey) = {
+            let (appearance, hotkey, search_hotkey) = {
                 let config = state.config.lock().unwrap();
-                (config.appearance, config.hotkey.trim().to_string())
+                (
+                    config.appearance,
+                    config.hotkey.trim().to_string(),
+                    config.search_hotkey.trim().to_string(),
+                )
             };
             let handle = app.handle().clone();
             build_floater(&handle, appearance)?;
             build_tray(&handle, state.clone())?;
 
-            // The panel from anywhere, hands on the keyboard. An unparseable
-            // or taken shortcut costs the hotkey, never the app.
+            // The panel and the search from anywhere, hands on the keyboard.
+            // An unparseable or taken shortcut costs that hotkey, never the app.
             if !hotkey.is_empty() {
                 let shortcut_state = state.clone();
                 if let Err(e) = app.global_shortcut().on_shortcut(
@@ -541,6 +645,20 @@ pub fn run() {
                     eprintln!("lanyard: could not register hotkey {hotkey:?}: {e}");
                 }
             }
+            if !search_hotkey.is_empty() {
+                let shortcut_state = state.clone();
+                if let Err(e) = app.global_shortcut().on_shortcut(
+                    search_hotkey.as_str(),
+                    move |app, _shortcut, event| {
+                        if event.state == ShortcutState::Pressed {
+                            let appearance = shortcut_state.config.lock().unwrap().appearance;
+                            toggle_search(app, appearance);
+                        }
+                    },
+                ) {
+                    eprintln!("lanyard: could not register hotkey {search_hotkey:?}: {e}");
+                }
+            }
 
             if !ax::is_trusted() {
                 // Self-repairing: clears any stale/denied TCC entry so the
@@ -552,20 +670,21 @@ pub fn run() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() != "panel" {
+            if window.label() != "panel" && window.label() != "search" {
                 return;
             }
             match event {
-                // Closing the panel should park it, not tear down the app.
+                // Closing the panel or the search should park it, not tear
+                // down the app.
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     let _ = window.hide();
                 }
                 // Popover semantics: as an Accessory app, Lanyard never
-                // appears in ⌘-tab, so a de-focused panel would be
+                // appears in ⌘-tab, so a de-focused overlay would be
                 // unreachable — and, pinned to every Space, it would flash
                 // through Space transitions. Clicking away dismisses it;
-                // the tray and the global hotkey summon it back anywhere.
+                // the tray and the global hotkeys summon it back anywhere.
                 WindowEvent::Focused(false) => {
                     let _ = window.hide();
                 }
