@@ -22,7 +22,7 @@ render() { rsvg-convert -w "$2" -h "$2" "$1" -o "$3"; }
 master=$(mktemp -d)/master.png
 render assets/icon.svg 1024 "$master"
 # Quiet unless it fails — it lists 60-odd Windows/iOS/Android files we don't ship.
-if ! log=$(npx tauri icon "$master" -o "$icons" 2>&1); then
+if ! log=$(bunx tauri icon "$master" -o "$icons" 2>&1); then
   echo "$log" >&2
   exit 1
 fi
