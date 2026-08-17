@@ -30,7 +30,7 @@ dark by default, light by configuration, and exactly as wide as its text.
 
 ## Install
 
-Requires Rust and Node.
+Requires Rust and Bun.
 
 ```bash
 make
@@ -168,7 +168,7 @@ the grant while unsigned rebuilds lose it every time.
 ## Development
 
 ```bash
-npm run dev                          # hot-reloading dev build
+bun run dev                          # hot-reloading dev build
 cargo test --manifest-path src-tauri/Cargo.toml
 
 # Print exactly what Lanyard sees — sessions, terminal apps, focus resolution.
@@ -203,7 +203,7 @@ Edit the SVGs, then regenerate everything (needs `brew install librsvg`):
 ./scripts/build-icons.sh
 ```
 
-Don't run `npx tauri icon` on its own — it downsamples one master into every
+Don't run `bunx tauri icon` on its own — it downsamples one master into every
 size, which throws away the small-size artwork.
 
 The dev build is a different binary from the bundled app, so macOS treats it as
