@@ -22,6 +22,15 @@ all: build install shell launch
 	@echo "appears as soon as a Claude Code terminal has focus. (Lanyard also"
 	@echo "re-prompts itself at launch whenever access is missing.)"
 
+# Updater artifacts must be minisign-signed; local builds pick the key up
+# from ~/.tauri automatically when it exists (CI uses the repo secret).
+# The key is encrypted with an empty password; the password variable must
+# exist (empty) or the CLI prompts for it and dies without a tty.
+ifneq (,$(wildcard $(HOME)/.tauri/lanyard.key))
+build: export TAURI_SIGNING_PRIVATE_KEY := $(HOME)/.tauri/lanyard.key
+build: export TAURI_SIGNING_PRIVATE_KEY_PASSWORD :=
+endif
+
 build:
 	bun install
 	bun run build -- --bundles app

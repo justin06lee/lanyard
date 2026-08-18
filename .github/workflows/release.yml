@@ -53,8 +53,11 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Signs the updater artifacts (minisign), so installed copies can
-          # verify and apply new releases themselves.
+          # verify and apply new releases themselves. The key is encrypted
+          # with an empty password; the password variable must exist (empty)
+          # or the CLI prompts and dies without a tty.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         with:
           tauriScript: bunx tauri
           tagName: ${{ github.ref_name }}

@@ -35,7 +35,12 @@ configuration, and exactly as wide as its text.
 
 ## Install
 
-Requires Rust and Bun.
+```bash
+brew tap justin06lee/tap
+brew install --cask lanyard
+```
+
+Or from source (requires Rust and Bun):
 
 ```bash
 make
@@ -190,9 +195,11 @@ the workflow header lists the six needed (`APPLE_CERTIFICATE`, `APPLE_ID`,
 keys Accessibility grants to a binary's code signature, so signed updates keep
 the grant while unsigned rebuilds lose it every time.
 
-`packaging/homebrew/lanyard.rb` is a ready cask template — copy it into a
-`homebrew-tap` repository and fill in the DMG's sha256 to make the app
-`brew install --cask lanyard`-able.
+The live cask is in
+[justin06lee/homebrew-tap](https://github.com/justin06lee/homebrew-tap)
+(`brew tap justin06lee/tap && brew install --cask lanyard`); bump its
+`version` and `sha256` when a release ships. `packaging/homebrew/lanyard.rb`
+is the in-repo template it came from.
 
 ---
 

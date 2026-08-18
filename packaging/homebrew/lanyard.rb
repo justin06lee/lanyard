@@ -7,7 +7,7 @@
 #   brew tap justin06lee/tap
 #   brew install --cask lanyard
 cask "lanyard" do
-  version "0.2.1"
+  version "0.3.0"
   sha256 "REPLACE_WITH_DMG_SHA256"
 
   url "https://github.com/justin06lee/lanyard/releases/download/v#{version}/Lanyard_#{version}_aarch64.dmg"
