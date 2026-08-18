@@ -17,9 +17,9 @@ use std::time::{Duration, Instant};
 
 use tauri::image::Image;
 use tauri::{AppHandle, Emitter, LogicalPosition, Manager};
-use tauri_plugin_notification::NotificationExt;
 
 use crate::ax;
+use crate::notify;
 use crate::sessions::{Scanner, Session};
 use crate::store::{Anchor, Config};
 use crate::title;
@@ -276,12 +276,7 @@ fn run(app: AppHandle, state: Arc<State>) {
                         prev_status.get(&s.pid).map(String::as_str) == Some("waiting");
                     if now_waiting && !was_waiting {
                         let name = config.name_for(&s.session_id, &s.cwd, &s.repo);
-                        let _ = app
-                            .notification()
-                            .builder()
-                            .title(name)
-                            .body("Claude is waiting on you")
-                            .show();
+                        notify::post(&name, "Claude is waiting on you");
                     }
                 }
             }

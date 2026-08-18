@@ -51,8 +51,11 @@ Accessibility grant, sets up your shell profile, and launches it. Lanyard
 lives in the menu bar — there is no Dock icon. (`make build`, `make install`,
 `make test`, `make doctor` and friends exist too; see the Makefile.)
 
-On launch macOS asks for **Accessibility** access. Lanyard needs it to see
-which window has focus; without it the pill stays hidden. The request is
+On launch macOS asks for **Accessibility** access (Lanyard needs it to see
+which window has focus; without it the pill stays hidden) and for
+**notification** permission (how a blocked session on another Desktop reaches
+you — posted through UNUserNotificationCenter, since macOS 26 silently drops
+the legacy notification API most tooling still uses). The request is
 self-repairing: macOS only shows the consent prompt while no entry exists for
 the app, so a stale grant (from a rebuild) or a previously dismissed prompt
 would normally swallow the request silently — Lanyard clears its own entry
@@ -75,7 +78,7 @@ Claude Code sessions afterwards.
 | See every session | Tray › *Sessions…*, or **⌃⌘L** from anywhere |
 | Find a session | **⌃⌘K** (or tray › *Find session…*) — fuzzy-search by name, repo, directory or what Claude says it's doing; **↵** jumps to it |
 | Jump to a session | Click its row in the panel — its window (and Space) comes to the front |
-| Jump to a *waiting* session | **⌃⌘J** — straight to whichever session is blocked on you; press again to cycle through them |
+| Jump to a *waiting* session | **⌃⌘J** — straight to whichever session is blocked on you; press again to cycle through them. Nothing waiting? It opens the panel, where all-grey dots are the answer |
 | Hide/show the pill | Tray › *Show pill* |
 
 When a session flips to *waiting on you*, the menu bar glyph grows a badge dot

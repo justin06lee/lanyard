@@ -1,4 +1,5 @@
 pub mod ax;
+pub mod notify;
 pub mod sessions;
 pub mod store;
 pub mod title;
@@ -13,7 +14,6 @@ use tauri::menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu};
 use tauri::tray::TrayIconBuilder;
 use tauri_plugin_autostart::{MacosLauncher, ManagerExt};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
-use tauri_plugin_notification::NotificationExt;
 use tauri_plugin_updater::UpdaterExt;
 use tauri::utils::config::WindowEffectsConfig;
 use tauri::utils::{WindowEffect, WindowEffectState};
@@ -208,8 +208,10 @@ fn raise_session(pid: i32) -> Result<(), String> {
 }
 
 /// Raises the session that's blocked waiting on you; invoked again, it cycles
-/// through every waiting session in turn. With nothing waiting it says so —
-/// silent no-ops on a global hotkey read as breakage.
+/// through every waiting session in turn. With nothing waiting it opens the
+/// sessions panel instead — feedback you can see, where all-grey dots *are*
+/// the answer. (A notification here would depend on a permission the user may
+/// never have granted; a silent no-op on a global hotkey reads as breakage.)
 fn raise_waiting(app: &AppHandle, state: &Arc<State>) {
     let waiting: Vec<i32> = {
         let snapshot = state.snapshot.lock().unwrap();
@@ -221,12 +223,8 @@ fn raise_waiting(app: &AppHandle, state: &Arc<State>) {
             .collect()
     };
     if waiting.is_empty() {
-        let _ = app
-            .notification()
-            .builder()
-            .title("Lanyard")
-            .body("No session is waiting on you.")
-            .show();
+        let appearance = state.config.lock().unwrap().appearance;
+        let _ = show_panel(app, appearance);
         return;
     }
     let next = {
@@ -514,12 +512,10 @@ fn choose_hotkey(app: &AppHandle, state: &Arc<State>, choice: &str, presets: &[H
         } else {
             // The combo is taken (or invalid): put the old one back and say so.
             let _ = register_hotkey_action(app, state, group, &old);
-            let _ = app
-                .notification()
-                .builder()
-                .title("Lanyard")
-                .body(format!("Couldn't grab {keys} — another app may own it."))
-                .show();
+            notify::post(
+                "Lanyard",
+                &format!("Couldn't grab {keys} — another app may own it."),
+            );
         }
     }
 
@@ -546,46 +542,26 @@ fn spawn_update_check(app: AppHandle, item: MenuItem<tauri::Wry>, interactive: b
                 if !interactive {
                     return;
                 }
-                let _ = app
-                    .notification()
-                    .builder()
-                    .title("Lanyard")
-                    .body(format!("Updating to v{}…", update.version))
-                    .show();
+                notify::post("Lanyard", &format!("Updating to v{}…", update.version));
                 match update.download_and_install(|_, _| {}, || {}).await {
                     Ok(()) => app.restart(),
                     Err(e) => {
                         let _ = item.set_text("Check for updates…");
-                        let _ = app
-                            .notification()
-                            .builder()
-                            .title("Lanyard")
-                            .body(format!("Update failed: {e}"))
-                            .show();
+                        notify::post("Lanyard", &format!("Update failed: {e}"));
                     }
                 }
             }
             Ok(None) => {
                 let _ = item.set_text("Check for updates…");
                 if interactive {
-                    let _ = app
-                        .notification()
-                        .builder()
-                        .title("Lanyard")
-                        .body("Lanyard is up to date.")
-                        .show();
+                    notify::post("Lanyard", "Lanyard is up to date.");
                 }
             }
             // Offline is the ordinary failure here; only a clicked check
             // deserves an explanation.
             Err(e) => {
                 if interactive {
-                    let _ = app
-                        .notification()
-                        .builder()
-                        .title("Lanyard")
-                        .body(format!("Update check failed: {e}"))
-                        .show();
+                    notify::post("Lanyard", &format!("Update check failed: {e}"));
                 }
             }
         }
@@ -640,7 +616,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
             &[
                 ("⌃⌘L", "ctrl+cmd+l"),
                 ("⌥⌘L", "alt+cmd+l"),
-                ("⌃⌘P", "ctrl+cmd+p"),
+                ("⇧⌘L", "shift+cmd+l"),
                 ("Disabled", ""),
             ],
         ),
@@ -650,6 +626,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
             &[
                 ("⌃⌘K", "ctrl+cmd+k"),
                 ("⌥⌘K", "alt+cmd+k"),
+                ("⇧⌘K", "shift+cmd+k"),
                 ("⌥Space", "alt+space"),
                 ("Disabled", ""),
             ],
@@ -660,6 +637,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
             &[
                 ("⌃⌘J", "ctrl+cmd+j"),
                 ("⌥⌘J", "alt+cmd+j"),
+                ("⇧⌘J", "shift+cmd+j"),
                 ("Disabled", ""),
             ],
         ),
@@ -809,7 +787,6 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_plugin_updater::Builder::new().build())
-        .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
             MacosLauncher::LaunchAgent,
             None,
@@ -857,6 +834,9 @@ pub fn run() {
                 // prompt actually appears. The tray item re-runs it later.
                 ax::repair_trust();
             }
+
+            // Notification consent, asked once; the system remembers.
+            notify::init();
 
             tracker::spawn(handle, state.clone());
             Ok(())
