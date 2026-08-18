@@ -1,37 +1,32 @@
+<div align="center">
+
+<img src="assets/lanyard.svg" alt="Lanyard" width="640" />
+
 # Lanyard
 
-A floating name tag for whichever Claude Code session you're currently looking at.
+**A floating name tag for whichever Claude Code session you're looking at.**<br>
+*Liquid glass over the focused terminal, a Spotlight for sessions, and a nudge when one is waiting on you.*
 
-When you run a dozen Claude Code sessions across a dozen Desktops, every window
-looks identical — Claude Code titles them all `✳ Claude Code`. Lanyard puts a small
-always-on-top pill over the focused terminal telling you *which* session it is,
-named after its repository and renameable to whatever you like.
-
-<p align="center">
-  <img src="assets/pill-preview.svg" width="560" alt="The Lanyard pill floating over a terminal" />
-</p>
-
-The pill is deliberately tiny: the name, set in glass — joined by a small dot
-that breathes while Claude works and turns orange while it waits on you, and
-absent when there's nothing to say. It's a real NSVisualEffectView capsule —
-liquid glass blurring whatever sits behind it — dark by default, light by
-configuration, and exactly as wide as its text.
-
-- **Follows you across Desktops.** One floater, pinned to every Space.
-- **Follows focus within a Desktop.** Switch between two terminals on the same
-  screen and the tag updates.
-- **Names itself from the repo**, and remembers renames per session *and* per
-  directory, so tomorrow's session in the same checkout keeps the name.
-- **Throw it where you want it.** Drag needs no click-to-focus first, and
-  wherever you release — or flick — the pill, it locks to the nearest corner
-  and remembers.
-- Everything else — Claude's own one-line summary of each session, live
-  busy/idle/waiting status — lives in the Sessions panel, one tray click away.
-- **Any session is a keystroke away.** ⌃⌘K summons a Spotlight-style search
-  over your sessions; type a few letters, hit ↵, and its window (and Space)
-  comes to the front.
+</div>
 
 ---
+
+Run a dozen Claude Code sessions across a dozen Desktops and every window looks
+identical — they're all titled `✳ Claude Code`. Lanyard pins a tiny always-on-top
+glass pill over the focused terminal that says *which* session it is: named
+after its repository, renameable to anything, joined by a dot that breathes
+while Claude works and turns orange when it's waiting on you.
+
+- **One pill, every Desktop.** It follows you across Spaces and across focus
+  changes within one — and hides the moment a non-terminal has focus.
+- **Any session is a keystroke away.** ⌃⌘K opens a Spotlight-style search over
+  your sessions; ↵ carries you to the window (and its Space).
+- **Blocked sessions can't idle unnoticed.** The menu bar glyph grows a badge,
+  a notification names the session, and ⌃⌘J jumps straight to it.
+- **Names stick.** Renames are remembered per session *and* per directory, so
+  tomorrow's session in the same checkout keeps today's name.
+- **Throw the pill where you want it.** Drag or flick — it locks to the
+  nearest of six positions and remembers.
 
 ## Install
 
@@ -46,27 +41,21 @@ Or from source (requires Rust and Bun):
 make
 ```
 
-That builds the app, installs it to /Applications, clears any stale
-Accessibility grant, sets up your shell profile, and launches it. Lanyard
-lives in the menu bar — there is no Dock icon. (`make build`, `make install`,
-`make test`, `make doctor` and friends exist too; see the Makefile.)
+That builds, installs to /Applications, clears any stale Accessibility grant,
+sets up your shell profile, and launches.
 
-On launch macOS asks for **Accessibility** access (Lanyard needs it to see
-which window has focus; without it the pill stays hidden) and for
-**notification** permission (how a blocked session on another Desktop reaches
-you — posted through UNUserNotificationCenter, since macOS 26 silently drops
-the legacy notification API most tooling still uses). The request is
-self-repairing: macOS only shows the consent prompt while no entry exists for
-the app, so a stale grant (from a rebuild) or a previously dismissed prompt
-would normally swallow the request silently — Lanyard clears its own entry
-first whenever it finds itself untrusted, so the prompt always appears. The
-tray menu's *Accessibility access…* item re-runs it any time.
+Lanyard needs three grants from macOS: **Accessibility** (to see which window
+has focus — the pill stays hidden without it), **Notifications** (the
+waiting-on-you banners), and **file access** for session folders on external
+volumes. macOS queues its consent dialogs one behind another and a missed one
+is indistinguishable from a bug, so Lanyard opens a **Permissions checklist**
+at launch whenever something is ungranted — live dots that turn green the
+moment macOS applies a grant, and a button per row that actually re-asks.
+It's in the tray as *Permissions…* any time.
 
-`setup-shell.sh` appends `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` to your shell
-profile — see [How it works](#how-it-works) for why that matters. Restart your
-Claude Code sessions afterwards.
-
----
+`setup-shell.sh` (run by `make`) exports `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1`
+in your shell profile — see [How it works](#how-it-works) for why. Restart
+your Claude Code sessions afterwards.
 
 ## Using it
 
@@ -75,212 +64,129 @@ Claude Code sessions afterwards.
 | Rename the focused session | Double-click the name on the pill |
 | Reset to the repo name | Rename it to an empty string |
 | Move the pill | Drag or flick it — it locks to the nearest of six positions and remembers |
-| See every session | Tray › *Sessions…*, or **⌃⌘L** from anywhere |
-| Find a session | **⌃⌘K** (or tray › *Find session…*) — fuzzy-search by name, repo, directory or what Claude says it's doing; **↵** jumps to it |
-| Jump to a session | Click its row in the panel — its window (and Space) comes to the front |
-| Jump to a *waiting* session | **⌃⌘J** — straight to whichever session is blocked on you; press again to cycle through them. Nothing waiting? It opens the panel, where all-grey dots are the answer |
-| Hide/show the pill | Tray › *Show pill* |
+| See every session | Tray › *Sessions…*, or **⌃⌘L** |
+| Find a session | **⌃⌘K** — fuzzy-search, **↵** jumps to it |
+| Jump to a *waiting* session | **⌃⌘J** — press again to cycle through them; nothing waiting opens the panel instead |
+| Check permissions | Tray › *Permissions…* |
+| Update | Tray › *Check for updates…* (it also checks quietly at launch) |
 
-When a session flips to *waiting on you*, the menu bar glyph grows a badge dot
-and a notification names the session — so a blocked session on another Desktop
-can't idle unnoticed. Light appearance, notifications, title management and
-start-at-login all toggle from the tray menu, and tray › *Shortcuts* picks
-each hotkey from a handful of presets — no config file required.
-
-The pill only appears when a Claude Code session has focus. Switch to your
-browser and it gets out of the way. The panel behaves like a popover: click
-anywhere else and it dismisses itself — **⌃⌘L** or the tray brings it back on
+The **panel** lists every session with a live status dot, Claude's own
+one-line summary of what it's doing, and click-to-jump. It behaves like a
+popover: click anywhere else and it's gone; the tray or ⌃⌘L brings it back on
 whatever Space you're on.
 
-Settings live in `~/.config/lanyard/config.json` (the tray covers the common
-ones). `"appearance"`: `"dark"` (default) or `"light"`. `"hotkey"`: the panel
-shortcut, `"ctrl+cmd+l"` by default, `""` to disable. `"searchHotkey"`: the
-search shortcut, `"ctrl+cmd+k"` by default. `"waitingHotkey"`: the
-jump-to-waiting shortcut, `"ctrl+cmd+j"` by default. `""` disables any of
-them, tray › *Shortcuts* covers the common combos, and the config file
-accepts any combo the presets don't offer.
+The **search** ranks like you'd hope: with nothing typed, sessions waiting on
+you list first; a query fuzzy-matches the name (matches highlighted), falling
+back to repo path, Claude's summary, and the working directory — so `ju de`
+finds `justin06lee.dev`, and typing what a session is *doing* finds it too.
 
-The search palette ranks like you'd hope: with nothing typed, sessions that
-are waiting on you list first; a query fuzzy-matches the session name (matches
-highlighted), falling back to the repo path, Claude's own summary of the work,
-and the working directory — so `ju de` finds `justin06lee.dev`, and typing
-what a session is *doing* finds it too.
-
----
+Settings live in `~/.config/lanyard/config.json`, but the tray covers all the
+common ones — appearance, notifications, title management, start-at-login,
+and every shortcut via preset pickers (⌃⌘, ⌥⌘, ⇧⌘ variants, or disabled).
+The config file accepts any combo the presets don't offer.
 
 ## How it works
 
-Claude Code already keeps a registry at `~/.claude/sessions/<pid>.json` with each
-session's id, working directory, a derived name and a live busy/idle status. Lanyard
-reads it rather than inventing its own tracking, and supplies the two things it
-lacks: a link from session to *window*, and somewhere to display it.
+Claude Code keeps a registry at `~/.claude/sessions/<pid>.json` with each
+session's id, cwd, name and live busy/idle/waiting status. Lanyard reads that
+rather than inventing its own tracking, and supplies the two things it lacks:
+a link from session to *window*, and somewhere to display it.
 
-**Identity travels in the terminal title.** This is the only channel that works
-for terminals like Alacritty, where every window belongs to one shared process —
-so process ancestry can't tell windows apart. Lanyard writes an OSC-0 title to each
-session's tty carrying a machine-readable token:
+**Identity travels in the terminal title.** It's the only channel that works
+for terminals like Alacritty, where every window belongs to one shared
+process. Lanyard writes an OSC-0 title to each session's tty carrying a
+machine-readable token:
 
 ```
 hikmah.chat ⟦lanyard:6202⟧
 ```
 
-**Focus resolution uses the macOS Accessibility API** to read the focused
-window's title and geometry. AX deliberately reports only windows on the *active*
-Space, which is exactly right here: whatever it can see is what you're looking
-at. The floater is marked `visibleOnAllWorkspaces`, so a single window follows
-you across every Desktop instead of one per Space.
+**Focus arrives as events.** Lanyard keeps an `AXObserver` on each terminal
+app hosting a session — activation, focus, geometry and title changes wake it
+instantly, so switching or dragging windows moves the pill the moment it
+happens. A once-a-second fallback re-reads the registry and covers anything an
+observer missed. Resolution asks each terminal whether it is `AXFrontmost`
+rather than using the system-wide focus query (which returns
+`kAXErrorCannotComplete` on macOS 26); scoping to terminals is also exactly
+the semantics the pill wants — in a browser, nothing matches and it hides.
 
-Focus changes arrive as events, not polls: Lanyard keeps an `AXObserver` on
-each terminal app hosting a session, so switching windows — or dragging one —
-moves the pill the instant it happens. A slow fallback tick re-reads the
-session registry once a second and covers anything an observer missed; an app
-that refuses observation is simply polled the old way.
-
-Lanyard asks each *terminal app hosting a session* whether it is `AXFrontmost`,
-rather than asking the system for its focused application. The system-wide
-`AXFocusedApplication` query returns `kAXErrorCannotComplete` (-25204) on macOS
-26 even with Accessibility fully granted, while per-application queries work
-reliably. Scoping the question to terminals is also the behaviour we want: when
-you're in a browser, no candidate matches and the floater hides itself.
+**Notifications post through UNUserNotificationCenter** directly: macOS 26
+silently discards the deprecated notification API most tooling still uses.
 
 ### Why `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`
 
-Claude Code rewrites the terminal title as it works — `✳ Claude Code` at rest,
-then a summary of the current task. Since Lanyard uses the title as its identity
-channel, the two overwrite each other every few seconds. Lanyard copes (it notices
-an untagged title and re-stamps, throttled to once per 750 ms) but the title
-visibly flickers in Mission Control.
-
-Setting `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` stops Claude Code touching the
-title, leaving Lanyard in sole possession. The Sessions panel tells you how many
-running sessions still need this.
-
-This is invisible in normal use: Alacritty's `decorations = "Buttonless"` hides
-window titles entirely, so the title bar is free real estate. Where it *does*
-show — Mission Control — the human-readable name comes first, which makes
-picking the right Desktop easier.
-
----
+Claude Code rewrites the terminal title as it works, and Lanyard uses the title
+as its identity channel — without the variable the two overwrite each other
+every few seconds. Lanyard copes (it notices untagged titles and re-stamps,
+throttled) but the title visibly flickers in Mission Control. Setting
+`CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` leaves Lanyard in sole possession; the
+panel counts the sessions that still need it.
 
 ## Terminal support
 
-Developed and verified against **Alacritty**. The mechanism is
-emulator-agnostic — it needs only OSC title support and AX-visible windows — so
-Terminal.app, WezTerm, kitty and Ghostty should work, but those have not been
-exercised end-to-end yet; reports welcome.
-
-One caveat for **tabbed** terminals (iTerm2, Terminal.app, WezTerm): macOS
-exposes a tabbed window as a single AX window, so Lanyard resolves the tab that owns
-the title, which is the foreground one. Split panes within a single tab can't be
-distinguished. Alacritty's one-window-per-session model has no such ambiguity.
-
-Window ids are read from whichever of `ALACRITTY_WINDOW_ID`, `KITTY_WINDOW_ID`,
-`WEZTERM_PANE`, `ITERM_SESSION_ID` or `WINDOWID` the emulator exports.
-
----
-
-## Releases
-
-CI (`.github/workflows/ci.yml`) runs the test suite on every push. Pushing a
-`v*` tag runs `.github/workflows/release.yml`, which builds the DMG and
-attaches it to a draft GitHub release.
-
-Installed copies keep themselves current. Lanyard checks the latest published
-release shortly after launch; when a newer version exists, the tray's *Check
-for Updates…* item retitles to *Update to vX.Y.Z…* and one click downloads,
-verifies (updater artifacts are minisign-signed in CI with the
-`TAURI_SIGNING_PRIVATE_KEY` secret) and swaps the app in place, then
-relaunches. Publishing a release is all it takes to roll everyone forward.
-
-Release builds are unsigned unless you add signing secrets to the repository —
-the workflow header lists the six needed (`APPLE_CERTIFICATE`, `APPLE_ID`,
-`APPLE_TEAM_ID`, …). A signed, notarized build is worth the ceremony: macOS
-keys Accessibility grants to a binary's code signature, so signed updates keep
-the grant while unsigned rebuilds lose it every time.
-
-The live cask is in
-[justin06lee/homebrew-tap](https://github.com/justin06lee/homebrew-tap)
-(`brew tap justin06lee/tap && brew install --cask lanyard`); bump its
-`version` and `sha256` when a release ships. `packaging/homebrew/lanyard.rb`
-is the in-repo template it came from.
-
----
+Developed and verified end-to-end against **Alacritty**. The mechanism needs
+only OSC title support and AX-visible windows, so Terminal.app, WezTerm,
+kitty and Ghostty should work — reports welcome. Tabbed terminals resolve to
+the foreground tab (macOS exposes a tabbed window as one AX window); split
+panes within a tab can't be distinguished. Window ids are read from whichever
+of `ALACRITTY_WINDOW_ID`, `KITTY_WINDOW_ID`, `WEZTERM_PANE`,
+`ITERM_SESSION_ID` or `WINDOWID` the emulator exports.
 
 ## Development
 
 ```bash
-bun run dev                          # hot-reloading dev build
-cargo test --manifest-path src-tauri/Cargo.toml
-
-# Print exactly what Lanyard sees — sessions, terminal apps, focus resolution.
-cargo run --manifest-path src-tauri/Cargo.toml --bin lanyard-doctor
+bun run dev                                        # hot-reloading dev build
+cargo test --manifest-path src-tauri/Cargo.toml    # the test suite
+make doctor                                        # print exactly what Lanyard sees
 ```
 
 | Path | Purpose |
 | --- | --- |
 | `src-tauri/src/sessions.rs` | Reads Claude Code's registry, enriches with tty + window id |
-| `src-tauri/src/ax.rs` | Accessibility bridge: focused app, window title, rect |
+| `src-tauri/src/ax.rs` | Accessibility bridge: focus, geometry, raise, observers |
 | `src-tauri/src/title.rs` | OSC title stamping and token parsing |
-| `src-tauri/src/tracker.rs` | Polling loop: focus → session → floater placement |
-| `src-tauri/src/store.rs` | Persisted names and floater anchor |
-| `ui/` | Floater and sessions panel (plain HTML/CSS/JS, no build step) |
+| `src-tauri/src/tracker.rs` | The event-driven loop: focus → session → pill placement |
+| `src-tauri/src/notify.rs` | UNUserNotificationCenter bridge |
+| `src-tauri/src/store.rs` | Persisted names, anchor, shortcuts |
+| `ui/` | Pill, panel, search and permissions windows (plain HTML/CSS/JS) |
 | `assets/` | Icon artwork (SVG source of truth) |
 
-### Icons
+When something looks wrong, run `lanyard-doctor` first — it prints the
+sessions, terminal apps and focus resolution exactly as Lanyard sees them,
+and ships inside the bundle
+(`/Applications/Lanyard.app/Contents/MacOS/lanyard-doctor`). A missing pill
+is almost always the Accessibility grant (tray › *Permissions…* shows and
+fixes it); a wrong or lagging name is almost always the title tug-of-war
+(`./scripts/setup-shell.sh`, then restart those sessions). Background agents
+(`--bg`) are excluded from the panel by design.
 
-`assets/icon.svg` is the app icon — a badge on a cord, the pill the app draws
-on screen hanging from its lanyard. `assets/icon-small.svg` is the same figure
-redrawn for 16pt and 32pt: the clip ring and badge line turn to mud below
-48px, so those sizes reduce to cord and pill the way Apple's small sizes do.
-`assets/tray.svg` is the menu bar glyph: black on transparent, marked as a
-macOS *template* image so the system tints it to match a light or dark menu
-bar. `assets/tray-alert.svg` is the same glyph with a badge dot, shown while a
-session is blocked waiting on you. They're rendered at 36px because tray-icon
-displays them at 18pt, making that exactly 2x on Retina.
+Icons: `assets/icon.svg` is the app icon, `icon-small.svg` the 16/32pt
+redraw, `tray.svg`/`tray-alert.svg` the template menu bar glyphs. Edit the
+SVGs and regenerate with `./scripts/build-icons.sh` (needs
+`brew install librsvg`) — don't run `bunx tauri icon` alone; it downsamples
+one master and throws away the small-size artwork.
 
-Edit the SVGs, then regenerate everything (needs `brew install librsvg`):
+The app is unsigned, and macOS keys TCC grants to a binary's code hash, so
+**every rebuild strands the previous grants**. `make` clears the stale
+entries, the app re-prompts itself whenever it finds itself untrusted, and
+the Permissions window shows live exactly what's missing — the worst case is
+clicking a fresh prompt, never spelunking through System Settings.
 
-```bash
-./scripts/build-icons.sh
-```
+## Releases
 
-Don't run `bunx tauri icon` on its own — it downsamples one master into every
-size, which throws away the small-size artwork.
+CI runs the tests on every push; pushing a `v*` tag builds the DMG and drafts
+a GitHub release. Installed copies keep themselves current: a quiet check at
+launch retitles the tray item when a newer release exists, and one click
+downloads, verifies (updater artifacts are minisign-signed in CI) and swaps
+the app in place. The live cask is in
+[justin06lee/homebrew-tap](https://github.com/justin06lee/homebrew-tap);
+bump its `version` and `sha256` when a release ships.
 
-The dev build is a different binary from the bundled app, so macOS treats it as
-a separate Accessibility entry — you'll be asked to grant access twice.
-
-The app is unsigned, and macOS keys Accessibility grants to a binary's code
-hash, so **every rebuild strands the previous grant**. `make install` clears
-the stale entry for you, and the app itself re-prompts at launch whenever it
-finds itself untrusted — so the worst case after a rebuild is granting the
-fresh prompt again, never spelunking through System Settings.
-
----
-
-## Troubleshooting
-
-Run `lanyard-doctor` first — it answers most of these directly.
-
-**The pill never appears.** Check Accessibility access is granted to the
-binary you're actually running. Tray › *Sessions…* shows a banner when it
-isn't, and tray › *Accessibility access…* clears any stale grant and re-asks.
-`lanyard-doctor` prints `accessibility : granted` when it's in order.
-
-**It shows the wrong session, or lags a moment behind.** Almost always the title
-tug-of-war — run `./scripts/setup-shell.sh` and restart those sessions.
-
-**A session is missing from the panel.** Lanyard lists interactive sessions with a
-live pid and a controlling tty; background agents (`--bg`) are excluded by
-design.
-
-`lanyard-doctor` ships inside the bundle too, so an installed copy can be checked
-without the source tree:
-
-```bash
-/Applications/Lanyard.app/Contents/MacOS/lanyard-doctor
-/Applications/Lanyard.app/Contents/MacOS/lanyard-doctor 1239   # probe a specific app pid
-```
+Release builds are unsigned unless the `APPLE_*` secrets exist in the
+repository — the workflow header lists the six and signing turns on by
+itself once they do. Signed builds are worth the ceremony: macOS keys TCC
+grants to the code signature, so signed updates keep every grant unsigned
+rebuilds lose.
 
 ## License
 
