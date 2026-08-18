@@ -8,6 +8,12 @@
 use lanyard_lib::{ax, sessions, store::Config, title, tracker::host_app};
 
 fn main() {
+    // Piped into `head`, stdout closes early; dying quietly on SIGPIPE is
+    // the Unix way — Rust's default is a panic and a macOS crash report.
+    unsafe {
+        libc::signal(libc::SIGPIPE, libc::SIG_DFL);
+    }
+
     let config = Config::load();
 
     println!("lanyard doctor");
