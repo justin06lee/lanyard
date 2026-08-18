@@ -38,6 +38,9 @@ const RESCAN_EVERY: Duration = Duration::from_millis(1000);
 /// Sessions started without `CLAUDE_CODE_DISABLE_TERMINAL_TITLE` keep rewriting
 /// their own title, so Lanyard has to re-stamp. Throttle that tug-of-war.
 const RESTAMP_COOLDOWN: Duration = Duration::from_millis(750);
+/// How often to re-ask the notification center for the permission state — an
+/// XPC round trip, cheap but not free, and it changes at human speed.
+const NOTIF_CHECK: Duration = Duration::from_secs(5);
 /// Re-stamp every title periodically, not just when a bad one is noticed.
 ///
 /// Lanyard can only detect a clobbered title on the window it can see — the focused
@@ -88,6 +91,10 @@ pub struct Snapshot {
     /// Registry files that no longer parse the way Lanyard expects — the
     /// canary for a Claude Code format change.
     pub registry_errors: usize,
+    /// The notification-permission decision: granted / denied / notDetermined.
+    pub notifications: String,
+    /// Session folders macOS won't let Lanyard read (missing file access).
+    pub cwd_blocked: usize,
 }
 
 /// Shared state between the tracker thread and the Tauri commands.
@@ -242,9 +249,17 @@ fn run(app: AppHandle, state: Arc<State>) {
 
     let own_pid = std::process::id() as i32;
 
+    let mut notif_status = String::new();
+    let mut last_notif_check = Instant::now() - NOTIF_CHECK;
+
     loop {
         let trusted = ax::is_trusted();
         let config = state.config.lock().unwrap().clone();
+
+        if last_notif_check.elapsed() >= NOTIF_CHECK {
+            last_notif_check = Instant::now();
+            notif_status = notify::authorization_status().to_string();
+        }
 
         if last_scan.elapsed() >= RESCAN_EVERY {
             sessions = scanner.scan();
@@ -364,6 +379,8 @@ fn run(app: AppHandle, state: Arc<State>) {
             },
             title_conflicts: sessions.iter().filter(|s| !s.title_disabled).count(),
             registry_errors: scanner.registry_errors(),
+            notifications: notif_status.clone(),
+            cwd_blocked: sessions.iter().filter(|s| s.cwd_blocked).count(),
         };
 
         if let Ok(mut slot) = state.snapshot.lock() {

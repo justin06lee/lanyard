@@ -36,6 +36,9 @@ pub struct Session {
     /// from the `ai-title` entries in its transcript.
     pub ai_title: Option<String>,
     pub started_at: Option<i64>,
+    /// True when macOS refused to read the session's cwd — the missing
+    /// file-access (removable volume) grant, surfaced so it can be fixed.
+    pub cwd_blocked: bool,
 }
 
 /// The slice of a session's environment Lanyard cares about. Immutable for the
@@ -423,6 +426,13 @@ impl Scanner {
                 .unwrap_or_default()
                 .to_string();
             let cwd_path = PathBuf::from(&cwd);
+            // `.exists()` (used by git_root below) swallows errors, so a TCC
+            // denial silently degrades to "no repo". Probe explicitly to tell
+            // "not a repo" apart from "macOS won't let us look".
+            let cwd_blocked = matches!(
+                std::fs::symlink_metadata(&cwd_path),
+                Err(ref e) if e.kind() == std::io::ErrorKind::PermissionDenied
+            );
             let root = git_root(&cwd_path);
             let repo = root
                 .as_deref()
@@ -463,6 +473,7 @@ impl Scanner {
                 title_disabled: env.title_disabled,
                 ai_title,
                 started_at: value.get("startedAt").and_then(|v| v.as_i64()),
+                cwd_blocked,
             });
         }
 

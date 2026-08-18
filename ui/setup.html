@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>Lanyard — permissions</title>
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body class="panel setup">
+    <header class="panel-head" data-tauri-drag-region>
+      <span class="count" data-tauri-drag-region>Permissions</span>
+    </header>
+
+    <ul class="perms">
+      <li class="perm">
+        <div class="dot waiting" id="ax-dot"></div>
+        <div class="text">
+          <div class="name">Accessibility</div>
+          <div class="desc">
+            Sees which terminal window has focus. Without it the pill stays
+            hidden and jumping to sessions can't work.
+          </div>
+          <div class="sub" id="ax-sub"></div>
+        </div>
+        <button id="ax-fix">Grant…</button>
+      </li>
+      <li class="perm">
+        <div class="dot waiting" id="notif-dot"></div>
+        <div class="text">
+          <div class="name">Notifications</div>
+          <div class="desc">
+            A banner the moment a session starts waiting on you.
+          </div>
+          <div class="sub" id="notif-sub"></div>
+        </div>
+        <button id="notif-fix">Allow…</button>
+      </li>
+      <li class="perm">
+        <div class="dot waiting" id="files-dot"></div>
+        <div class="text">
+          <div class="name">File access</div>
+          <div class="desc">
+            Reads session folders — external drives included — to name
+            sessions after their repositories.
+          </div>
+          <div class="sub" id="files-sub"></div>
+        </div>
+        <button id="files-fix">Fix…</button>
+      </li>
+    </ul>
+
+    <p class="perm-note">
+      Lanyard re-checks continuously — dots turn green the moment macOS
+      applies a grant.
+    </p>
+
+    <script src="setup.js"></script>
+  </body>
+</html>

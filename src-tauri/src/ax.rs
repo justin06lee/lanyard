@@ -74,7 +74,7 @@ impl Drop for CfOwned {
 }
 
 /// Must match `identifier` in tauri.conf.json — it names our own TCC entry.
-const BUNDLE_ID: &str = "dev.justin06lee.lanyard";
+pub const BUNDLE_ID: &str = "dev.justin06lee.lanyard";
 
 /// True once the user has ticked Lanyard in System Settings › Privacy › Accessibility.
 pub fn is_trusted() -> bool {

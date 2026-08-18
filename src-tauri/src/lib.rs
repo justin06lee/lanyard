@@ -68,6 +68,22 @@ fn request_accessibility() -> bool {
     ax::repair_trust()
 }
 
+#[tauri::command]
+fn request_notifications() {
+    notify::request();
+}
+
+/// Re-asks for file access with the same self-repair trick the Accessibility
+/// flow uses: clear our own entry so the consent prompt can appear again —
+/// the tracker's next scan touches the folders and triggers it within a
+/// second.
+#[tauri::command]
+fn request_file_access() {
+    let _ = std::process::Command::new("/usr/bin/tccutil")
+        .args(["reset", "SystemPolicyRemovableVolumes", ax::BUNDLE_ID])
+        .status();
+}
+
 /// How long a pill width change takes; long enough to read as a morph,
 /// short enough to keep up with rapid session switching.
 const RESIZE_MS: f64 = 160.0;
@@ -368,6 +384,35 @@ fn show_panel(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
     Ok(())
 }
 
+/// The permissions checklist: which grants exist, which are missing, and a
+/// button that actually re-asks for each. Deliberately *not* a popover — it
+/// has to survive a trip to System Settings and back, so it stays until
+/// closed.
+fn show_setup(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
+    if let Some(win) = app.get_webview_window("setup") {
+        win.show()?;
+        win.set_focus()?;
+        return Ok(());
+    }
+    let win = WebviewWindowBuilder::new(app, "setup", WebviewUrl::App("setup.html".into()))
+        .title("Lanyard — permissions")
+        .inner_size(420.0, 372.0)
+        .resizable(false)
+        .transparent(true)
+        .title_bar_style(tauri::TitleBarStyle::Overlay)
+        .hidden_title(true)
+        .theme(Some(theme_of(appearance)))
+        .effects(WindowEffectsConfig {
+            effects: vec![WindowEffect::Sidebar],
+            state: Some(WindowEffectState::Active),
+            radius: None,
+            color: None,
+        })
+        .build()?;
+    win.set_visible_on_all_workspaces(true)?;
+    Ok(())
+}
+
 fn build_floater(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
     let floater = WebviewWindowBuilder::new(app, "floater", WebviewUrl::App("index.html".into()))
         .title("Lanyard")
@@ -401,7 +446,7 @@ fn build_floater(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
 /// Applies the configured theme to every window; the webviews re-skin
 /// themselves when the next snapshot carries the new appearance.
 fn apply_theme(app: &AppHandle, appearance: Appearance) {
-    for label in ["floater", "panel", "search"] {
+    for label in ["floater", "panel", "search", "setup"] {
         if let Some(window) = app.get_webview_window(label) {
             let _ = window.set_theme(Some(theme_of(appearance)));
         }
@@ -670,7 +715,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
     let shortcuts_menu = Submenu::with_items(app, "Shortcuts", true, &shortcut_refs)?;
 
     let sep2 = PredefinedMenuItem::separator(app)?;
-    let ax_item = MenuItem::with_id(app, "ax", "Accessibility access…", true, None::<&str>)?;
+    let perms_item = MenuItem::with_id(app, "perms", "Permissions…", true, None::<&str>)?;
     let update_item =
         MenuItem::with_id(app, "update", "Check for updates…", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit Lanyard", true, None::<&str>)?;
@@ -688,7 +733,7 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
             &login_item,
             &shortcuts_menu,
             &sep2,
-            &ax_item,
+            &perms_item,
             &update_item,
             &quit_item,
         ],
@@ -765,8 +810,9 @@ fn build_tray(app: &AppHandle, state: Arc<State>) -> tauri::Result<()> {
                 let _ = login_item.set_checked(manager.is_enabled().unwrap_or(false));
             }
         }
-        "ax" => {
-            ax::repair_trust();
+        "perms" => {
+            let appearance = state.config.lock().unwrap().appearance;
+            let _ = show_setup(app, appearance);
         }
         "update" => spawn_update_check(app.clone(), update_item.clone(), true),
         "quit" => app.exit(0),
@@ -798,6 +844,8 @@ pub fn run() {
             rename,
             set_enabled,
             request_accessibility,
+            request_notifications,
+            request_file_access,
             resize_pill,
             set_drag_offset,
             commit_drag,
@@ -838,16 +886,41 @@ pub fn run() {
             // Notification consent, asked once; the system remembers.
             notify::init();
 
-            tracker::spawn(handle, state.clone());
+            tracker::spawn(handle.clone(), state.clone());
+
+            // macOS queues its consent dialogs one behind another, and a
+            // missed one is indistinguishable from a bug. If anything is
+            // still ungranted once the first scans land, open the checklist
+            // where it can't be missed.
+            {
+                let handle = handle.clone();
+                let state = state.clone();
+                std::thread::spawn(move || {
+                    std::thread::sleep(std::time::Duration::from_secs(2));
+                    let missing = {
+                        let snapshot = state.snapshot.lock().unwrap();
+                        !snapshot.ax_trusted || snapshot.notifications != "granted"
+                    };
+                    if !missing {
+                        return;
+                    }
+                    let appearance = state.config.lock().unwrap().appearance;
+                    let ui = handle.clone();
+                    let _ = handle.run_on_main_thread(move || {
+                        let _ = show_setup(&ui, appearance);
+                    });
+                });
+            }
             Ok(())
         })
         .on_window_event(|window, event| {
-            if window.label() != "panel" && window.label() != "search" {
+            let label = window.label();
+            let popover = label == "panel" || label == "search";
+            if !popover && label != "setup" {
                 return;
             }
             match event {
-                // Closing the panel or the search should park it, not tear
-                // down the app.
+                // Closing any of them should park it, not tear down the app.
                 WindowEvent::CloseRequested { api, .. } => {
                     api.prevent_close();
                     let _ = window.hide();
@@ -857,7 +930,9 @@ pub fn run() {
                 // unreachable — and, pinned to every Space, it would flash
                 // through Space transitions. Clicking away dismisses it;
                 // the tray and the global hotkeys summon it back anywhere.
-                WindowEvent::Focused(false) => {
+                // The permissions window is the exception: it must survive a
+                // trip to System Settings and back, so only closing parks it.
+                WindowEvent::Focused(false) if popover => {
                     let _ = window.hide();
                 }
                 _ => {}
