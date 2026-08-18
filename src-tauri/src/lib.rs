@@ -288,6 +288,31 @@ fn resize_search(height: f64, app: AppHandle) {
     }
 }
 
+/// Makes a window summonable over *fullscreen* apps, not just between them.
+/// Tauri's `set_visible_on_all_workspaces` grants only CanJoinAllSpaces, and
+/// macOS refuses to bring such a window onto another app's fullscreen Space —
+/// a hotkey pressed there "works" onto a Space the user cannot see, which
+/// reads as the hotkey being dead. FullScreenAuxiliary is the missing bit.
+fn join_fullscreen_spaces(win: &tauri::WebviewWindow) {
+    const CAN_JOIN_ALL_SPACES: usize = 1 << 0; // NSWindowCollectionBehaviorCanJoinAllSpaces
+    const FULL_SCREEN_AUXILIARY: usize = 1 << 8; // NSWindowCollectionBehaviorFullScreenAuxiliary
+    let handle = win.clone();
+    // AppKit wants collectionBehavior touched on the main thread only.
+    let _ = win.run_on_main_thread(move || {
+        let Ok(ns_window) = handle.ns_window() else {
+            return;
+        };
+        let ns_window = ns_window as *mut objc2::runtime::AnyObject;
+        unsafe {
+            let current: usize = objc2::msg_send![&*ns_window, collectionBehavior];
+            let _: () = objc2::msg_send![
+                &*ns_window,
+                setCollectionBehavior: current | CAN_JOIN_ALL_SPACES | FULL_SCREEN_AUXILIARY
+            ];
+        }
+    });
+}
+
 fn build_search(app: &AppHandle, appearance: Appearance) -> tauri::Result<tauri::WebviewWindow> {
     let win = WebviewWindowBuilder::new(app, "search", WebviewUrl::App("search.html".into()))
         .title("Lanyard — search")
@@ -312,6 +337,7 @@ fn build_search(app: &AppHandle, appearance: Appearance) -> tauri::Result<tauri:
         .build()?;
     // Summonable on whatever Space you're on, like the panel.
     win.set_visible_on_all_workspaces(true)?;
+    join_fullscreen_spaces(&win);
     Ok(win)
 }
 
@@ -381,6 +407,7 @@ fn show_panel(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
         })
         .build()?;
     panel.set_visible_on_all_workspaces(true)?;
+    join_fullscreen_spaces(&panel);
     Ok(())
 }
 
@@ -410,6 +437,7 @@ fn show_setup(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
         })
         .build()?;
     win.set_visible_on_all_workspaces(true)?;
+    join_fullscreen_spaces(&win);
     Ok(())
 }
 
@@ -438,8 +466,10 @@ fn build_floater(app: &AppHandle, appearance: Appearance) -> tauri::Result<()> {
             color: None,
         })
         .build()?;
-    // The whole point: one floater that follows you across every Space.
+    // The whole point: one floater that follows you across every Space —
+    // fullscreen terminals included.
     floater.set_visible_on_all_workspaces(true)?;
+    join_fullscreen_spaces(&floater);
     Ok(())
 }
 
