@@ -39,6 +39,10 @@ install:
 	-pkill -x lanyard
 	rm -rf $(APP)
 	cp -R $(BUNDLE) $(APP)
+	@# Re-register with LaunchServices: notification consent is keyed to the
+	@# app's sealed identity, and a stale registration from a previous build
+	@# makes usernoted refuse ("not allowed for this application").
+	-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f $(APP)
 	@# The old grant is keyed to the replaced binary's code hash; clearing it
 	@# lets the fresh binary's request actually show the consent prompt.
 	$(MAKE) reset-ax

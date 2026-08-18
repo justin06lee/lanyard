@@ -166,11 +166,15 @@ SVGs and regenerate with `./scripts/build-icons.sh` (needs
 `brew install librsvg`) — don't run `bunx tauri icon` alone; it downsamples
 one master and throws away the small-size artwork.
 
-The app is unsigned, and macOS keys TCC grants to a binary's code hash, so
-**every rebuild strands the previous grants**. `make` clears the stale
-entries, the app re-prompts itself whenever it finds itself untrusted, and
-the Permissions window shows live exactly what's missing — the worst case is
-clicking a fresh prompt, never spelunking through System Settings.
+Builds are ad-hoc signed (`signingIdentity: "-"`): the bundle is sealed under
+its real identifier, which UNUserNotificationCenter requires — an unsealed
+bundle gets "notifications are not allowed for this application" and no
+consent prompt, ever. Ad-hoc still means no certificate chain, and macOS keys
+TCC grants to the code hash, so **every rebuild strands the Accessibility
+grant**. `make` clears the stale entries, the app re-prompts itself whenever
+it finds itself untrusted, and the Permissions window shows live exactly
+what's missing — the worst case is clicking a fresh prompt, never spelunking
+through System Settings.
 
 ## Releases
 

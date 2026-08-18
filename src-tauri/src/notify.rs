@@ -36,7 +36,18 @@ pub fn init() {
     let options = UNAuthorizationOptions::Alert
         | UNAuthorizationOptions::Sound
         | UNAuthorizationOptions::Badge;
-    let done = RcBlock::new(|_granted: Bool, _error: *mut NSError| {});
+    // The outcome is invisible in normal use, so leave a trace where a
+    // terminal launch can see it — authorization failures are otherwise
+    // indistinguishable from a prompt the user never noticed.
+    let done = RcBlock::new(|granted: Bool, error: *mut NSError| {
+        match unsafe { error.as_ref() } {
+            Some(e) => eprintln!("lanyard: notification authorization failed: {e:?}"),
+            None => eprintln!(
+                "lanyard: notification authorization answered: granted={}",
+                granted.as_bool()
+            ),
+        }
+    });
     center.requestAuthorizationWithOptions_completionHandler(options, &done);
 }
 
@@ -96,7 +107,12 @@ pub fn post(title: &str, body: &str) {
         &content,
         None,
     );
-    let done = RcBlock::new(|_error: *mut NSError| {});
+    // Same trace rationale as init(): a refused post is otherwise silent.
+    let done = RcBlock::new(|error: *mut NSError| {
+        if let Some(e) = unsafe { error.as_ref() } {
+            eprintln!("lanyard: notification post failed: {e:?}");
+        }
+    });
     UNUserNotificationCenter::currentNotificationCenter()
         .addNotificationRequest_withCompletionHandler(&request, Some(&done));
 }
