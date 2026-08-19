@@ -1,6 +1,6 @@
 {
   "name": "lanyard",
-  "version": "0.3.2",
+  "version": "0.3.3",
   "private": true,
   "description": "Floating name tags for your Claude Code sessions",
   "scripts": {
