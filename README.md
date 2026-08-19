@@ -1,6 +1,6 @@
 <div align="center">
 
-<img src="assets/lanyard.svg" alt="Lanyard" width="640" />
+<img src="assets/icon.svg" alt="Lanyard" width="128" />
 
 # Lanyard
 
